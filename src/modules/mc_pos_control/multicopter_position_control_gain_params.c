@@ -83,6 +83,142 @@ PARAM_DEFINE_FLOAT(MPC_Z_VEL_P_ACC, 4.f);
  */
 PARAM_DEFINE_FLOAT(MPC_XY_VEL_P_ACC, 1.8f);
 
+ /**
+  * MFAC参数
+  *
+ * @min -200
+ * @max 200
+ * @decimal 2
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+
+
+PARAM_DEFINE_FLOAT(MPC_MF_XYV_THM, 1.f);/**MFAC控制相关参数 */
+
+/**
+ * MFAC参数
+ *
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+
+PARAM_DEFINE_FLOAT(MPC_MF_XYV_THC1, -0.3f);
+
+/**
+ * MFAC参数
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_XYV_THC2, 0.2f);
+
+/**
+ * MFAC参数
+ *
+ * Integral gain for vertical velocity error
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_XYV_THC3, -0.1f);
+
+/**
+ * MFAC参数
+ *
+ * @min -200
+ * @max 200
+ * @decimal 2
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+
+PARAM_DEFINE_FLOAT(MPC_MF_XYV_LAM, 10.f);
+
+/**
+ * MFAC参数
+ *
+ * @min 0
+ * @max 1000
+ * @decimal 1
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_XYV_LAC, 10.f);
+
+/**
+ * MFAC参数
+ *
+ * @min 0
+ * @max 1000
+ * @decimal 1
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+//Z的
+PARAM_DEFINE_FLOAT(MPC_MF_ZV_THM, 1.f);
+
+/**
+ * MFAC参数
+ *
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_ZV_THC1, 1.f);
+
+/**
+ * MFAC参数
+ *
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_ZV_THC2, 1.f);
+/**
+ * MFAC参数
+ *
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_ZV_THC3, 1.f);
+
+/**
+ * MFAC参数
+ *
+ * @min -200
+ * @max 200
+ * @decimal 2
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_ZV_LAM, 1.f);
+
+/**
+ * MFAC参数
+ *
+ * @min 0
+ * @max 1000
+ * @decimal 1
+ * @increment 0.1
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_ZV_LAC, 1.f);
+
 /**
  * Integral gain for vertical velocity error
  *
@@ -94,6 +230,7 @@ PARAM_DEFINE_FLOAT(MPC_XY_VEL_P_ACC, 1.8f);
  * @increment 0.1
  * @group Multicopter Position Control
  */
+
 PARAM_DEFINE_FLOAT(MPC_Z_VEL_I_ACC, 2.f);
 
 /**
@@ -135,3 +272,15 @@ PARAM_DEFINE_FLOAT(MPC_Z_VEL_D_ACC, 0.f);
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_FLOAT(MPC_XY_VEL_D_ACC, 0.2f);
+
+/**
+ *
+ * 误差变化量的限制,第二项
+ *
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_XY_T2L, 0.15f);

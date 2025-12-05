@@ -44,6 +44,7 @@
 #include <uORB/topics/trajectory_setpoint.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
 #include <uORB/topics/vehicle_local_position_setpoint.h>
+//#include <Eigen/Core>
 
 struct PositionControlStates {
 	matrix::Vector3f position;
@@ -91,6 +92,8 @@ public:
 	 * @param I 3D vector of integral gains
 	 * @param D 3D vector of derivative gains
 	 */
+
+
 	void setVelocityGains(const matrix::Vector3f &P, const matrix::Vector3f &I, const matrix::Vector3f &D);
 
 	/**
@@ -99,6 +102,31 @@ public:
 	 * @param vel_up upwards velocity limit
 	 * @param vel_down downwards velocity limit
 	 */
+
+
+	 void setVelocityGainsMFAC(const matrix::Vector3f &LAMBDAC, const matrix::Vector3f &LAMBDAM, const matrix::Vector3f &THETACTEMPXY, const matrix::Vector3f &THETACTEMPZ, const matrix::Vector3f &THETAM);
+	/**
+	 * 设置MFAC参数
+	 * @param LAMBDAC
+	 * @param LAMBDAM
+	 * @param THETACTEMPXY
+	 * @param THETACTEMPZ
+	 * @param THETAM
+	 */
+
+	void setControllerMode(const int &MODE);
+	/**
+	 * 设置控制器类型
+	 * @param MODE
+	 */
+
+	void setXYThetac2Limit(const float &LIMIT);
+	/**
+	 * 修改参数限制
+	 * @param LIMIT
+	 */
+
+
 	void setVelocityLimits(const float vel_horizontal, const float vel_up, float vel_down);
 
 	/**
@@ -198,6 +226,7 @@ private:
 
 	void _positionControl(); ///< Position proportional control
 	void _velocityControl(const float dt); ///< Velocity PID control
+	void _velocityControlMFAC(const float dt); ///< Velocity MFAC control
 	void _accelerationControl(); ///< Acceleration setpoint processing
 
 	// Gains
@@ -205,6 +234,32 @@ private:
 	matrix::Vector3f _gain_vel_p; ///< Velocity control proportional gain
 	matrix::Vector3f _gain_vel_i; ///< Velocity control integral gain
 	matrix::Vector3f _gain_vel_d; ///< Velocity control derivative gain
+
+	//MFAC Gains
+	matrix::Vector3f _mfac_vel_lambdac;
+	matrix::Vector3f _mfac_vel_lambdam;
+	matrix::Matrix3f _mfac_vel_thetac;
+	matrix::Vector3f _mfac_vel_thetac_temp_xy;
+	matrix::Vector3f _mfac_vel_thetac_temp_z;
+	matrix::Vector3f _mfac_vel_thetam;
+	//控制器选择
+	int _vel_con_choose;
+
+	//控制器参数变化限制
+	float _mfac_vel_thetac_xy_thetac2Limit;
+
+	//PFDL-MFAC用到的参数
+	matrix::Matrix3f Hk;
+	matrix::Matrix3f ek;
+	matrix::Matrix3f uk;
+	matrix::Matrix<float, 2, 3> thetamk;
+	matrix::Matrix<float, 6, 3> thetack;
+	matrix::Vector3f thetacTemp;
+	bool ifInit = FALSE;
+	bool controlZ = FALSE;
+
+
+
 
 	// Limits
 	float _lim_vel_horizontal{}; ///< Horizontal velocity limit with feed forward and position control

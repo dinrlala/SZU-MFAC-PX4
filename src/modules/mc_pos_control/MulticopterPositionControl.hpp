@@ -148,6 +148,24 @@ private:
 		(ParamBool<px4::params::MPC_USE_HTE>)       _param_mpc_use_hte,
 		(ParamBool<px4::params::MPC_ACC_DECOUPLE>)  _param_mpc_acc_decouple,
 
+		//位置控制MFAC参数
+		(ParamFloat<px4::params::MPC_MF_XYV_THC1>)         _param_mpc_mfac_xy_vel_thetac1,
+		(ParamFloat<px4::params::MPC_MF_XYV_THC2>)         _param_mpc_mfac_xy_vel_thetac2,
+		(ParamFloat<px4::params::MPC_MF_XYV_THC3>)         _param_mpc_mfac_xy_vel_thetac3,
+		(ParamFloat<px4::params::MPC_MF_XYV_THM>)         _param_mpc_mfac_xy_vel_thetam,
+		(ParamFloat<px4::params::MPC_MF_XYV_LAC>)         _param_mpc_mfac_xy_vel_lambdac,
+		(ParamFloat<px4::params::MPC_MF_XYV_LAM>)         _param_mpc_mfac_xy_vel_lambdam,
+
+		(ParamFloat<px4::params::MPC_MF_ZV_THC1>)         _param_mpc_mfac_z_vel_thetac1,
+		(ParamFloat<px4::params::MPC_MF_ZV_THC2>)         _param_mpc_mfac_z_vel_thetac2,
+		(ParamFloat<px4::params::MPC_MF_ZV_THC3>)         _param_mpc_mfac_z_vel_thetac3,
+		(ParamFloat<px4::params::MPC_MF_ZV_THM>)         _param_mpc_mfac_z_vel_thetam,
+		(ParamFloat<px4::params::MPC_MF_ZV_LAC>)         _param_mpc_mfac_z_vel_lambdac,
+		(ParamFloat<px4::params::MPC_MF_ZV_LAM>)         _param_mpc_mfac_z_vel_lambdam,
+
+		//速度环控制器选择
+		(ParamInt<px4::params::VEL_CON_CHOOSE>)       _param_vel_con_choose,
+
 		// Takeoff / Land
 		(ParamFloat<px4::params::COM_SPOOLUP_TIME>) _param_com_spoolup_time, /**< time to let motors spool up after arming */
 		(ParamBool<px4::params::COM_THROW_EN>)      _param_com_throw_en, /**< throw launch enabled  */

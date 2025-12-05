@@ -166,6 +166,18 @@ void MulticopterPositionControl::parameters_update(bool force)
 			Vector3f(_param_mpc_xy_vel_p_acc.get(), _param_mpc_xy_vel_p_acc.get(), _param_mpc_z_vel_p_acc.get()),
 			Vector3f(_param_mpc_xy_vel_i_acc.get(), _param_mpc_xy_vel_i_acc.get(), _param_mpc_z_vel_i_acc.get()),
 			Vector3f(_param_mpc_xy_vel_d_acc.get(), _param_mpc_xy_vel_d_acc.get(), _param_mpc_z_vel_d_acc.get()));
+
+		//MFAC参数设置
+		_control.setVelocityGainsMFAC(
+			Vector3f(_param_mpc_mfac_xy_vel_lambdac.get(), _param_mpc_mfac_xy_vel_lambdac.get(), _param_mpc_mfac_z_vel_lambdac.get()),
+			Vector3f(_param_mpc_mfac_xy_vel_lambdam.get(), _param_mpc_mfac_xy_vel_lambdam.get(), _param_mpc_mfac_z_vel_lambdam.get()),
+			Vector3f(_param_mpc_mfac_xy_vel_thetac1.get(), _param_mpc_mfac_xy_vel_thetac2.get(), _param_mpc_mfac_xy_vel_thetac3.get()),
+			Vector3f(_param_mpc_mfac_z_vel_thetac1.get(), _param_mpc_mfac_z_vel_thetac2.get(), _param_mpc_mfac_z_vel_thetac3.get()),
+			Vector3f(_param_mpc_mfac_xy_vel_thetam.get(), _param_mpc_mfac_xy_vel_thetam.get(), _param_mpc_mfac_z_vel_thetam.get()));
+		//控制器选择
+		_control.setControllerMode(_param_vel_con_choose.get());
+		_control.setXYThetac2Limit(_mfac_vel_thetac_xy_thetac2Limit.get());
+
 		_control.setHorizontalThrustMargin(_param_mpc_thr_xy_marg.get());
 		_control.decoupleHorizontalAndVecticalAcceleration(_param_mpc_acc_decouple.get());
 		_goto_control.setParamMpcAccHor(_param_mpc_acc_hor.get());

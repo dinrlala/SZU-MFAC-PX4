@@ -39,10 +39,37 @@
 #include "ControlMath.hpp"
 #include <float.h>
 #include <mathlib/mathlib.h>
+#include <matrix/matrix/math.hpp>
 #include <px4_platform_common/defines.h>
 #include <geo/geo.h>
+//#include <Eigen/Core>
 
 using namespace matrix;
+
+//提取某一列的thetack和thetack1
+Vector3f get_thetack(const Matrix<float, 6, 3>& mat, size_t col_index) {
+    	matrix::Vector3f result;
+    	for (size_t i = 0; i < 3; ++i) {
+        	result(i) = mat(i, col_index);
+    	}
+    	return result;
+	}
+
+Vector3f get_thetack1(const Matrix<float, 6, 3>& mat, size_t col_index) {
+    	matrix::Vector3f result;
+    	for (size_t i = 0; i < 3; ++i) {
+        	result(i) = mat(3 + i, col_index);  // 从第3行开始
+    	}
+    	return result;
+}
+
+void edit_thetack(Matrix<float, 6, 3>& mat, size_t col_index, const Vector3f& value) {
+    for (size_t i = 0; i < 3; ++i) {
+        mat(i, col_index) = value(i);
+    }
+}
+
+
 
 const trajectory_setpoint_s PositionControl::empty_trajectory_setpoint = {0, {NAN, NAN, NAN}, {NAN, NAN, NAN}, {NAN, NAN, NAN}, {NAN, NAN, NAN}, NAN, NAN};
 
@@ -52,6 +79,28 @@ void PositionControl::setVelocityGains(const Vector3f &P, const Vector3f &I, con
 	_gain_vel_i = I;
 	_gain_vel_d = D;
 }
+
+void PositionControl::setVelocityGainsMFAC(const Vector3f &LAMBDAC, const Vector3f &LAMBDAM, const Vector3f &THETACTEMPXY,const Vector3f &THETACTEMPZ,const Vector3f &THETAM)//设置MFAC要用到的参数，在参数表中直接读取
+{
+	_mfac_vel_lambdac = LAMBDAC;
+	_mfac_vel_lambdam = LAMBDAM;
+	_mfac_vel_thetac_temp_xy = THETACTEMPXY;
+	_mfac_vel_thetac_temp_z = THETACTEMPZ;
+	_mfac_vel_thetam = THETAM;
+}
+
+void PositionControl::setControllerMode(const int &MODE)//设置使用什么Controller
+{
+	_vel_con_choose = MODE;
+}
+
+void PositionControl::setXYThetac2Limit(const float &LIMIT)//设置使用什么Controller
+{
+	_mfac_vel_thetac_xy_thetac2Limit = LIMIT;
+}
+
+
+
 
 void PositionControl::setVelocityLimits(const float vel_horizontal, const float vel_up, const float vel_down)
 {
@@ -111,7 +160,18 @@ bool PositionControl::update(const float dt)
 
 	if (valid) {
 		_positionControl();
-		_velocityControl(dt);
+		switch (_vel_con_choose)
+		{
+		case 0: //位置PID
+			_velocityControl(dt);
+			break;
+		case 1: //PDL-MFAC，近似增量PID
+			_velocityControlMFAC(dt);
+			break;
+		default://默认PID
+			_velocityControl(dt);
+			break;
+		}
 
 		_yawspeed_sp = PX4_ISFINITE(_yawspeed_sp) ? _yawspeed_sp : 0.f;
 		_yaw_sp = PX4_ISFINITE(_yaw_sp) ? _yaw_sp : _yaw; // TODO: better way to disable yaw control
@@ -144,7 +204,9 @@ void PositionControl::_velocityControl(const float dt)
 
 	// PID velocity control
 	Vector3f vel_error = _vel_sp - _vel;
-	Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
+	Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);//这里分了PID三段
+
+
 
 	// No control input from setpoints or corresponding states which are NAN
 	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
@@ -201,7 +263,164 @@ void PositionControl::_velocityControl(const float dt)
 	_vel_int += vel_error.emult(_gain_vel_i) * dt;
 }
 
-void PositionControl::_accelerationControl()
+
+
+//速度环MFAC控制器
+void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
+{
+	//这里thetack定义为一个6x3的矩阵，给未来的自己和后人，勿看也看不懂
+	//   x轴               y轴                  z轴
+	//  thetak_x(0)    thetak_y(0)        thetak_z(0)
+	//  thetak_x(1)    thetak_y(1)        thetak_z(1)
+	//  thetak_x(2)    thetak_y(2)        thetak_z(2)
+	//  thetak1_x(0)    thetak1_y(0)        thetak1_z(0)
+	//  thetak1_x(1)    thetak1_y(1)        thetak1_z(1)
+	//  thetak1_x(2)    thetak1_y(2)        thetak1_z(2)
+
+	ek.slice<2, 3>(1, 0) = ek.slice<2, 3>(0, 0);
+
+	for(int i=0;i<2;i++){
+		ek(0,i)=_vel_sp(i)-_vel(i);
+	}
+	//拼接成3X3矩阵
+	for (int i = 0; i < 2; i++) {
+    		_mfac_vel_thetac(0,i) = _mfac_vel_thetac_temp_xy(0);
+    		_mfac_vel_thetac(1,i) = _mfac_vel_thetac_temp_xy(1);
+    		_mfac_vel_thetac(2,i) = _mfac_vel_thetac_temp_xy(2);
+	}
+	_mfac_vel_thetac(0,2) = _mfac_vel_thetac_temp_z(0);
+    	_mfac_vel_thetac(1,2) = _mfac_vel_thetac_temp_z(1);
+    	_mfac_vel_thetac(2,2) = _mfac_vel_thetac_temp_z(2);
+
+	if(!ifInit){//初始化
+		//模型动态线性化参数初始化
+	   for(int i = 0;i < 3;i++){
+		thetamk(1,i)=_mfac_vel_thetam(i);
+	   }
+		//控制器动态线性化参数初始化
+	   for(int i = 0;i < 3;i++){
+		for(int j = 0;j<3;j++)
+		thetack(j+2,i)=_mfac_vel_thetac(j,i);
+	   }
+	  ifInit=TRUE;
+	}
+	//求Hk
+	for (int j = 0; j < 3; ++j) {
+        	Hk(0,j) = -ek(0,j);
+    	}
+    	for (int j = 0; j < 3; ++j) {
+        	Hk(1,j)= ek(0,j) - ek(1,j);
+    	}
+    	for (int j = 0; j < 3; ++j) {
+        	Hk(2,j) = ek(1,j) - ek(2,j);
+    	}
+	//求XY的thetamk
+	for(int i =0;i<2;i++){
+		thetamk(0,i)=thetamk(1,i)+(_vel(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/(_mfac_vel_lambdam(i)+powf(uk(1,i)-uk(2,i),2));
+	}
+
+	//求XY的thetack
+	for(int i=0;i<2;i++){
+		float Hknorm = Hk.col(i).norm();
+		matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+		float tempThetac=(get_thetack1(thetack,i).transpose()*Hk_col)(0, 0);
+		//这里有个问题，拿不到yd(k+1)
+		edit_thetack(thetack,i,get_thetack1(thetack,i)+thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac)/(_mfac_vel_lambdac(i)+powf(Hknorm,2.0)));
+	}
+	//误差变化量的限制,第二项
+	for(int i=0;i<2;i++){
+		matrix::Vector3f thetacktemp=get_thetack(thetack,i);
+		if(thetacktemp(1)>float(0.2))
+		thetacktemp(1)=float(0.2);
+		edit_thetack(thetack,i,thetacktemp);
+	}
+	//求XY的uk
+	for(int i=0;i<2;i++){
+		matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+		float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
+		uk(0,i)=uk(1,i)+uktemp;
+	}
+
+	// PID velocity control
+	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
+	Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
+
+	//替换为MFAC计算输出量
+	for(int i=0;i<2;i++){
+		acc_sp_velocity(i)=uk(0,i);
+	}
+	//如果控制Z轴速度则多加一部分,否则用默认的PID控制
+	if(controlZ){
+
+
+	}
+
+	//Z轴速度限制
+	_vel_int(2) = math::constrain(_vel_int(2), -CONSTANTS_ONE_G, CONSTANTS_ONE_G);
+
+
+	//额外处理
+	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);//检测完会加到acc_sp里,acc_sp内可能有前馈量
+
+	_accelerationControl();
+
+	// 垂直方向推力抗积分饱和
+	if ((_thr_sp(2) >= -_lim_thr_min && vel_error(2) >= 0.f) ||
+	    (_thr_sp(2) <= -_lim_thr_max && vel_error(2) <= 0.f)) {
+		vel_error(2) = 0.f;
+	}
+
+	// Prioritize vertical control while keeping a horizontal margin
+	const Vector2f thrust_sp_xy(_thr_sp);
+	const float thrust_sp_xy_norm = thrust_sp_xy.norm();
+	const float thrust_max_squared = math::sq(_lim_thr_max);
+
+	// 垂直推力优先保障
+	const float allocated_horizontal_thrust = math::min(thrust_sp_xy_norm, _lim_thr_xy_margin);
+	const float thrust_z_max_squared = thrust_max_squared - math::sq(allocated_horizontal_thrust);
+
+	// 垂直推力限幅
+	_thr_sp(2) = math::max(_thr_sp(2), -sqrtf(thrust_z_max_squared));
+
+	// 水平推力动态分配
+	const float thrust_max_xy_squared = thrust_max_squared - math::sq(_thr_sp(2));
+	float thrust_max_xy = 0.f;
+
+	if (thrust_max_xy_squared > 0.f) {
+		thrust_max_xy = sqrtf(thrust_max_xy_squared);
+	}
+
+	// Saturate thrust in horizontal direction
+	if (thrust_sp_xy_norm > thrust_max_xy) {
+		_thr_sp.xy() = thrust_sp_xy / thrust_sp_xy_norm * thrust_max_xy;
+	}
+	//抗积分饱和
+	// Use tracking Anti-Windup for horizontal direction: during saturation, the integrator is used to unsaturate the output
+	// see Anti-Reset Windup for PID controllers, L.Rundqwist, 1990
+	const Vector2f acc_sp_xy_produced = Vector2f(_thr_sp) * (CONSTANTS_ONE_G / _hover_thrust);
+	const float arw_gain = 2.f / _gain_vel_p(0);
+	//当因为约束无法达到期望的速度时
+	// The produced acceleration can be greater or smaller than the desired acceleration due to the saturations and the actual vertical thrust (computed independently).
+	// The ARW loop needs to run if the signal is saturated only.
+	const Vector2f acc_sp_xy = _acc_sp.xy();
+	const Vector2f acc_limited_xy = (acc_sp_xy.norm_squared() > acc_sp_xy_produced.norm_squared())
+					? acc_sp_xy_produced//饱和时使用实际能产生的加速度
+					: acc_sp_xy;//没饱和就随意
+	//使用期望加速度减去实际能产生的最大加速度乘以饱和增益来控制误差累积
+	vel_error.xy() = Vector2f(vel_error) - arw_gain * (acc_sp_xy - acc_limited_xy);
+
+	// Make sure integral doesn't get NAN
+	ControlMath::setZeroIfNanVector3f(vel_error);
+	// Update integral part of velocity control
+	_vel_int += vel_error.emult(_gain_vel_i) * dt;
+}
+
+
+
+
+
+
+void PositionControl::_accelerationControl()//计算推力的
 {
 	// Assume standard acceleration due to gravity in vertical direction for attitude generation
 	float z_specific_force = -CONSTANTS_ONE_G;

@@ -196,3 +196,18 @@ PARAM_DEFINE_FLOAT(MPC_Z_MAN_EXPO, 0.6f);
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_FLOAT(MPC_YAW_EXPO, 0.6f);
+
+/**
+ * 选择什么控制器作为速度环控制器
+ *
+ * The supported sub-modes are:
+ * 0 默认的PID
+ * 1 CDL-MFAC
+ *
+ *
+ * @value 0 PID
+ * @value 1 CDL-MFAC
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_INT32(VEL_CON_CHOOSE, 1);
+

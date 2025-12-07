@@ -267,6 +267,7 @@ private:
 	matrix::Vector3f thetacTemp;
 	bool ifInit = FALSE;
 	bool controlZ = FALSE;
+	int count=0;//初始化计时
 
 
 

@@ -290,11 +290,13 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	thetamk.slice<1, 3>(1, 0) = thetamk.slice<1, 3>(0, 0);
 	//更新thetack
 	thetack.slice<3, 3>(3, 0) = thetack.slice<3, 3>(0, 0);
+	//速度误差
+	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
 
 	for(int i=0;i<3;i++){
 		ek(0,i)=_vel_sp(i)-_vel(i);
 	}
-	//拼接成3X3矩阵
+	//thetack拼接成3X3矩阵
 	for (int i = 0; i < 2; i++) {
     		_mfac_vel_thetac(0,i) = _mfac_vel_thetac_temp_xy(0);
     		_mfac_vel_thetac(1,i) = _mfac_vel_thetac_temp_xy(1);
@@ -304,113 +306,99 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
     	_mfac_vel_thetac(1,2) = _mfac_vel_thetac_temp_z(1);
     	_mfac_vel_thetac(2,2) = _mfac_vel_thetac_temp_z(2);
 
-
-	if(_mfac_sol_mode){
-	 if(!ifInit){//初始化
-		//模型动态线性化参数初始化
-	 for(int i = 0;i < 3;i++){
-		thetamk(1,i)=_mfac_vel_thetam(i);
-	 }
-		//控制器动态线性化参数初始化
-	 for(int i = 0;i < 3;i++){
-		for(int j = 0;j<3;j++){
-		thetack(j+2,i)=_mfac_vel_thetac(j,i);}
-	 }
-	 for(int i = 0;i < 3;i++){
-		for(int j = 0;j<3;j++){
-		uk(j,i)=0.05;}
-	 }
-	 for(int i = 0;i < 3;i++){
-		for(int j = 0;j<3;j++){
-		ek(j,i)=0.05;}
-	 }
-	   ifInit=TRUE;
-	 }
-	//求Hk
-	for (int j = 0; j < 3; ++j) {
-        	Hk(0,j) = -ek(0,j);
-    	}
-    	for (int j = 0; j < 3; ++j) {
-        	Hk(1,j)= ek(0,j) - ek(1,j);
-    	}
-    	for (int j = 0; j < 3; ++j) {
-        	Hk(2,j) = ek(1,j) - ek(2,j);
-    	}
-	//求XY的thetamk
-	for(int i =0;i<2;i++){
-		thetamk(0,i)=thetamk(1,i)+(_vel(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/(_mfac_vel_lambdam(i)+powf(uk(1,i)-uk(2,i),2));
+	if(!ifInit){//如果未初始化，使用PID进行初始化
+		//初始化参数初值
+		for(int i = 0;i < 3;i++){
+			thetamk(1,i)=_mfac_vel_thetam(i);
+	 	}
+			//控制器动态线性化参数初始化
+	 	for(int i = 0;i < 3;i++){
+			for(int j = 0;j<3;j++){
+			thetack(j+2,i)=_mfac_vel_thetac(j,i);}
+	 	}
+		//初始化输入输出误差值，使用PID进行
+		for(int i = 0;i < 3;i++){
+			ek(0,i)=vel_error(i);
+	 	}
+		Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
+		for(int i = 0;i < 3;i++){
+			uk(0,i)=acc_sp_velocity(i);
+	 	}
+		count=count+1;
+		if(count>=50){//初始化完毕
+			ifInit=true;
+		}
 	}
-	//求XY的thetack
-	for(int i=0;i<2;i++){
-		float Hknorm = Hk.col(i).norm();
-		matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
-		float tempThetac=(get_thetack1(thetack,i).transpose()*Hk_col)(0, 0);
-		//这里有个问题，拿不到yd(k+1)
-		edit_thetack(thetack,i,get_thetack1(thetack,i)+thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac)/(_mfac_vel_lambdac(i)+powf(Hknorm,2.0)));
-	}
-	//误差变化量的限制,第二项
-	for(int i=0;i<2;i++){
-		matrix::Vector3f thetacktemp=get_thetack(thetack,i);
-		if(thetacktemp(1)>_mfac_vel_thetac_xy_thetac2Limit)
-		thetacktemp(1)=_mfac_vel_thetac_xy_thetac2Limit;
-		edit_thetack(thetack,i,thetacktemp);
-	}
-	//求XY的uk
-	for(int i=0;i<2;i++){
-		matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
-		float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
-		uk(0,i)=uk(1,i)+uktemp;
-	}
-        }
 	else{
-	   if(!ifInit){//初始化
-		//模型动态线性化参数初始化
-	   for(int i = 0;i < 3;i++){
-		thetamk(1,i)=_mfac_vel_thetam(i);
-	   }
-		//控制器动态线性化参数初始化
-	   for(int i = 0;i < 3;i++){
-		for(int j = 0;j<3;j++){
-		thetack(j+2,i)=_mfac_vel_thetac(j,i);}
-	   }
-	  ifInit=TRUE;
-	}
+		if(!_mfac_sol_mode){//自适应模式
+			//求Hk
+			for (int j = 0; j < 3; ++j) {
+        			Hk(0,j) = -ek(0,j);
+    			}
+    			for (int j = 0; j < 3; ++j) {
+        			Hk(1,j)= ek(0,j) - ek(1,j);
+    			}
+    			for (int j = 0; j < 3; ++j) {
+        			Hk(2,j) = ek(1,j) - ek(2,j);
+    			}
+			//求XY的thetamk
+			for(int i =0;i<2;i++){
+				thetamk(0,i)=thetamk(1,i)+(_vel(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/(_mfac_vel_lambdam(i)+powf(uk(1,i)-uk(2,i),2));
+			}
+			//求XY的thetack
+			for(int i=0;i<2;i++){
+				float Hknorm = Hk.col(i).norm();
+				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+				float tempThetac=(get_thetack1(thetack,i).transpose()*Hk_col)(0, 0);
+				//这里有个问题，拿不到yd(k+1)
+				edit_thetack(thetack,i,get_thetack1(thetack,i)+thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac)/(_mfac_vel_lambdac(i)+powf(Hknorm,2.0)));
+			}
+			//误差变化量的限制,第二项
+			for(int i=0;i<2;i++){
+				matrix::Vector3f thetacktemp=get_thetack(thetack,i);
+				if(thetacktemp(1)>_mfac_vel_thetac_xy_thetac2Limit)
+				thetacktemp(1)=_mfac_vel_thetac_xy_thetac2Limit;
+				edit_thetack(thetack,i,thetacktemp);
+			}
+			//求XY的uk
+			for(int i=0;i<2;i++){
+				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+				float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
+				uk(0,i)=uk(1,i)+uktemp;
+			}
+   	     }
+		else{//固定增益模式，调试用
+		   	for(int i = 0;i < 3;i++){
+				thetamk(0,i)=_mfac_vel_thetam(i);
+		   	}
+		   	for(int i = 0;i < 3;i++){
+				for(int j = 0;j<3;j++){
+				thetack(j,i)=_mfac_vel_thetac(j,i);}
+		 	  }
+		  	 //求Hk
+		  	 for (int j = 0; j < 3; ++j) {
+   		       	 	Hk(0,j) = -ek(0,j);
+   	 	  	 }
+   	 	  	 for (int j = 0; j < 3; ++j) {
+    		      	 	Hk(1,j)= ek(0,j) - ek(1,j);
+    		  	 }
+    		  	 for (int j = 0; j < 3; ++j) {
+    		      	 	Hk(2,j) = ek(1,j) - ek(2,j);
+    		   	}
 
-	   for(int i = 0;i < 3;i++){
-		thetamk(0,i)=_mfac_vel_thetam(i);
-	   }
-	   for(int i = 0;i < 3;i++){
-		for(int j = 0;j<3;j++){
-		thetack(j,i)=_mfac_vel_thetac(j,i);}
-	   }
-	   //求Hk
-	   for (int j = 0; j < 3; ++j) {
-           	Hk(0,j) = -ek(0,j);
-    	   }
-    	   for (int j = 0; j < 3; ++j) {
-           	Hk(1,j)= ek(0,j) - ek(1,j);
-    	   }
-    	   for (int j = 0; j < 3; ++j) {
-           	Hk(2,j) = ek(1,j) - ek(2,j);
-    	   }
 
-
-	for(int i=0;i<2;i++){
-	   matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
-	   float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
-	   uk(0,i)=uk(1,i)+uktemp;
-	}
-	//更新uk
-	uk.slice<2, 3>(1, 0) = uk.slice<2, 3>(0, 0);
-	}
-
-	// PID velocity control
-	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
-	Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
-
-	//替换为MFAC计算输出量
-	for(int i=0;i<2;i++){
-		acc_sp_velocity(i)=uk(0,i);
+			for(int i=0;i<2;i++){
+	 	  		matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+	   			float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
+	  	 		uk(0,i)=uk(1,i)+uktemp;
+			}
+		}
+		//最后Z轴输出还是用PID
+		Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
+		//其余替换为MFAC计算输出量
+		for(int i=0;i<2;i++){
+			acc_sp_velocity(i)=uk(0,i);
+		}
 	}
 	//如果控制Z轴速度则多加一部分,否则用默认的PID控制
 	if(controlZ){
@@ -423,9 +411,9 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 
 
 	//额外处理
-	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);//检测完会加到acc_sp里,acc_sp内可能有前馈量
+	//ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);//检测完会加到acc_sp里,acc_sp内可能有前馈量
 
-	_accelerationControl();
+	_accelerationControl();//计算推力
 
 	// 垂直方向推力抗积分饱和
 	if ((_thr_sp(2) >= -_lim_thr_min && vel_error(2) >= 0.f) ||

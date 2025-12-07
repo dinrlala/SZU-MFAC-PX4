@@ -221,8 +221,8 @@ PARAM_DEFINE_INT32(VEL_CON_CHOOSE, 1);
  * 1 固定
  *
  *
- * @value 0 PID
- * @value 1 CDL-MFAC
+ * @value 0 不固定增益
+ * @value 1 固定增益
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_INT32(MFAC_SOL_MODE, 0);

@@ -282,7 +282,14 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	//  thetak1_x(1)    thetak1_y(1)        thetak1_z(1)
 	//  thetak1_x(2)    thetak1_y(2)        thetak1_z(2)
 
+	//更新ek
 	ek.slice<2, 3>(1, 0) = ek.slice<2, 3>(0, 0);
+	//更新uk
+	uk.slice<2, 3>(1, 0) = uk.slice<2, 3>(0, 0);
+	//更新thetamk
+	thetamk.slice<1, 3>(1, 0) = thetamk.slice<1, 3>(0, 0);
+	//更新thetack
+	thetack.slice<3, 3>(3, 0) = thetack.slice<3, 3>(0, 0);
 
 	for(int i=0;i<3;i++){
 		ek(0,i)=_vel_sp(i)-_vel(i);
@@ -325,8 +332,6 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	for(int i =0;i<2;i++){
 		thetamk(0,i)=thetamk(1,i)+(_vel(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/(_mfac_vel_lambdam(i)+powf(uk(1,i)-uk(2,i),2));
 	}
-	//更新thetam
-	thetamk.slice<1, 3>(1, 0) = thetamk.slice<1, 3>(0, 0);
 	//求XY的thetack
 	for(int i=0;i<2;i++){
 		float Hknorm = Hk.col(i).norm();
@@ -335,8 +340,6 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 		//这里有个问题，拿不到yd(k+1)
 		edit_thetack(thetack,i,get_thetack1(thetack,i)+thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac)/(_mfac_vel_lambdac(i)+powf(Hknorm,2.0)));
 	}
-	//更新thetac
-	thetack.slice<3, 3>(3, 0) = thetack.slice<3, 3>(0, 0);
 	//误差变化量的限制,第二项
 	for(int i=0;i<2;i++){
 		matrix::Vector3f thetacktemp=get_thetack(thetack,i);
@@ -350,8 +353,6 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 		float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
 		uk(0,i)=uk(1,i)+uktemp;
 	}
-	//更新uk
-	uk.slice<2, 3>(1, 0) = uk.slice<2, 3>(0, 0);
         }
 	else{
 	   if(!ifInit){//初始化

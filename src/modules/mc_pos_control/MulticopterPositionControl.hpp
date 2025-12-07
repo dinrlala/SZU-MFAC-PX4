@@ -166,6 +166,13 @@ private:
 		//速度环控制器选择
 		(ParamInt<px4::params::VEL_CON_CHOOSE>)       _param_vel_con_choose,
 
+		//速度环控制器参数限制
+		(ParamFloat<px4::params::MPC_MF_XY_T2L>)       _mfac_vel_thetac_xy_thetac2Limit,
+
+		//是否固定增益选择
+		(ParamInt<px4::params::MFAC_SOL_MODE>)        _mfac_sol_mode,
+
+
 		// Takeoff / Land
 		(ParamFloat<px4::params::COM_SPOOLUP_TIME>) _param_com_spoolup_time, /**< time to let motors spool up after arming */
 		(ParamBool<px4::params::COM_THROW_EN>)      _param_com_throw_en, /**< throw launch enabled  */

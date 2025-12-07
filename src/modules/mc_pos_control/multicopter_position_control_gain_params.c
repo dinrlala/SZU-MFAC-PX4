@@ -133,8 +133,8 @@ PARAM_DEFINE_FLOAT(MPC_MF_XYV_THC3, -0.1f);
 /**
  * MFAC参数
  *
- * @min -200
- * @max 200
+ * @min 0
+ * @max 10000
  * @decimal 2
  * @increment 0.01
  * @group Multicopter Position Control
@@ -146,7 +146,7 @@ PARAM_DEFINE_FLOAT(MPC_MF_XYV_LAM, 10.f);
  * MFAC参数
  *
  * @min 0
- * @max 1000
+ * @max 10000
  * @decimal 1
  * @increment 0.1
  * @group Multicopter Position Control
@@ -200,8 +200,8 @@ PARAM_DEFINE_FLOAT(MPC_MF_ZV_THC3, 1.f);
 /**
  * MFAC参数
  *
- * @min -200
- * @max 200
+ * @min 0
+ * @max 10000
  * @decimal 2
  * @increment 0.01
  * @group Multicopter Position Control
@@ -212,7 +212,7 @@ PARAM_DEFINE_FLOAT(MPC_MF_ZV_LAM, 1.f);
  * MFAC参数
  *
  * @min 0
- * @max 1000
+ * @max 10000
  * @decimal 1
  * @increment 0.1
  * @group Multicopter Position Control

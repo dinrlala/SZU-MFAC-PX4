@@ -211,3 +211,19 @@ PARAM_DEFINE_FLOAT(MPC_YAW_EXPO, 0.6f);
  */
 PARAM_DEFINE_INT32(VEL_CON_CHOOSE, 1);
 
+
+
+/**
+ * 是否选择固定CDL-MFAC增益模式
+ *
+ * The supported sub-modes are:
+ * 0 默认不固定
+ * 1 固定
+ *
+ *
+ * @value 0 PID
+ * @value 1 CDL-MFAC
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_INT32(MFAC_SOL_MODE, 0);
+

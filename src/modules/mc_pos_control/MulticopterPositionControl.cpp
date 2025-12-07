@@ -176,6 +176,7 @@ void MulticopterPositionControl::parameters_update(bool force)
 			Vector3f(_param_mpc_mfac_xy_vel_thetam.get(), _param_mpc_mfac_xy_vel_thetam.get(), _param_mpc_mfac_z_vel_thetam.get()));
 		//控制器选择
 		_control.setControllerMode(_param_vel_con_choose.get());
+		_control.setMFACMode(_mfac_sol_mode.get());
 		_control.setXYThetac2Limit(_mfac_vel_thetac_xy_thetac2Limit.get());
 
 		_control.setHorizontalThrustMargin(_param_mpc_thr_xy_marg.get());

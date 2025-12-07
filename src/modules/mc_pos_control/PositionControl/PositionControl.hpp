@@ -120,6 +120,13 @@ public:
 	 * @param MODE
 	 */
 
+	 void setMFACMode(const int &MODE);
+	/**
+	 * 设置是否使用固定增益
+	 * @param MODE
+	 */
+
+
 	void setXYThetac2Limit(const float &LIMIT);
 	/**
 	 * 修改参数限制
@@ -244,6 +251,9 @@ private:
 	matrix::Vector3f _mfac_vel_thetam;
 	//控制器选择
 	int _vel_con_choose;
+
+	//是否固定增益
+	int _mfac_sol_mode;
 
 	//控制器参数变化限制
 	float _mfac_vel_thetac_xy_thetac2Limit;

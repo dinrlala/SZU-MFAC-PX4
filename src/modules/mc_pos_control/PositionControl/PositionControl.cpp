@@ -316,6 +316,14 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 		for(int j = 0;j<3;j++){
 		thetack(j+2,i)=_mfac_vel_thetac(j,i);}
 	 }
+	 for(int i = 0;i < 3;i++){
+		for(int j = 0;j<3;j++){
+		uk(j,i)=0.05;}
+	 }
+	 for(int i = 0;i < 3;i++){
+		for(int j = 0;j<3;j++){
+		ek(j,i)=0.05;}
+	 }
 	   ifInit=TRUE;
 	 }
 	//求Hk

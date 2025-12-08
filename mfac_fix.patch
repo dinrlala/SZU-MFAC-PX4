@@ -1,0 +1,140 @@
+diff --git a/src/modules/mc_pos_control/PositionControl.cpp b/src/modules/mc_pos_control/PositionControl.cpp
+index 0000000..1111111 100644
+--- a/src/modules/mc_pos_control/PositionControl.cpp
++++ b/src/modules/mc_pos_control/PositionControl.cpp
+@@ -30,6 +30,39 @@
+ #include <matrix/matrix/math.hpp>
+
+ using namespace matrix;
+
++// ================= MFAC state machine =================
++enum class MFACState { PID_INIT, MFAC_ACTIVE };
++static MFACState _mfac_state = MFACState::PID_INIT;
++
++// ================= MFAC history helpers =================
++static inline void mfac_shift_histories(
++	matrix::Matrix<float,3,3> &uk,
++	matrix::Matrix<float,3,3> &ek)
++{
++	for (int i = 0; i < 3; i++) {
++		uk(2,i) = uk(1,i);
++		uk(1,i) = uk(0,i);
++		ek(2,i) = ek(1,i);
++		ek(1,i) = ek(0,i);
++	}
++}
++
++static inline void mfac_init_histories(
++	matrix::Matrix<float,3,3> &uk,
++	matrix::Matrix<float,3,3> &ek)
++{
++	for (int i = 0; i < 3; i++) {
++		uk(2,i) = uk(1,i) = uk(0,i);
++		ek(2,i) = ek(1,i) = ek(0,i);
++	}
++}
++
+ const trajectory_setpoint_s PositionControl::empty_trajectory_setpoint =
+ {0, {NAN, NAN, NAN}, {NAN, NAN, NAN}, {NAN, NAN, NAN}, {NAN, NAN, NAN}, NAN, NAN};
+
+@@ -520,151 +553,148 @@ void PositionControl::_velocityControlMFAC(const float dt)
+ {
+-	// 原有 ek / uk slice 方式（将被移除）
++	// ================= 当前速度误差 =================
+ 	Vector3f vel_error = _vel_sp - _vel;
+
+ 	for (int i = 0; i < 3; i++) {
+-		ek(0,i)=_vel_sp(i)-_vel(i);
++		ek(0,i) = vel_error(i);
+ 	}
+
+-	if(!ifInit){//如果未初始化，使用PID进行初始化
+-		//初始化参数初值
+-		for(int i = 0;i < 3;i++){
+-			thetamk(1,i)=_mfac_vel_thetam(i);
+-	 	}
+-			//控制器动态线性化参数初始化
+-	 	for(int i = 0;i < 3;i++){
+-			for(int j = 0;j<3;j++){
+-			thetack(j+2,i)=_mfac_vel_thetac(j,i);}
+-	 	}
+-		//初始化输入输出误差值，使用PID进行
+-		for(int i = 0;i < 3;i++){
+-			ek(0,i)=vel_error(i);
+-	 	}
+-		Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
+-		for(int i = 0;i < 3;i++){
+-			uk(0,i)=acc_sp_velocity(i);
+-	 	}
+-		ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
+-		count=count+1;
+-		if(count>=2000){//初始化完毕
+-			ifInit=true;
+-			for(int i=0;i<3;i++){
+-				uk(1,i)=uk(0,i);
+-				uk(2,i)=uk(0,i);
+-			}
+-		}
+-	}
+-	else{
++	if (_mfac_state == MFACState::PID_INIT) {
++		// ============== PID 初始化阶段 ==============
++		Vector3f acc_sp_velocity =
++			vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
++
++		for (int i = 0; i < 3; i++) {
++			uk(0,i) = acc_sp_velocity(i);
++			thetamk(1,i) = _mfac_vel_thetam(i);
++
++			for (int j = 0; j < 3; j++) {
++				thetack(j+2,i) = _mfac_vel_thetac(j,i);
++			}
++		}
++
++		ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
++
++		count++;
++		if (count >= 2000) {
++			mfac_init_histories(uk, ek);
++			_mfac_state = MFACState::MFAC_ACTIVE;
++		}
++
++		return;
++	}
++
++	// ============== MFAC 正常阶段 ==============
++	// 先滚动历史（非常关键）
++	mfac_shift_histories(uk, ek);
++
++	// 计算 Hk
++	for (int j = 0; j < 3; j++) {
++		Hk(0,j) = -ek(0,j);
++		Hk(1,j) = ek(0,j) - ek(1,j);
++		Hk(2,j) = ek(1,j) - ek(2,j);
++	}
++
++	// 自适应 thetamk
++	for (int i = 0; i < 2; i++) {
++		float du = uk(1,i) - uk(2,i);
++		thetamk(0,i) = thetamk(1,i)
++			+ (_vel(i) - thetamk(1,i)*du)*du
++			  / (_mfac_vel_lambdam(i) + du*du);
++	}
++
++	// 计算 MFAC 控制量
++	for (int i = 0; i < 2; i++) {
++		Vector3f Hk_col = Vector3f(Hk.col(i));
++		float du = (get_thetack(thetack,i).transpose()*Hk_col)(0,0);
++		uk(0,i) = uk(1,i) + du;
++	}
++
++	// Z 轴仍使用 PID
++	Vector3f acc_sp_velocity =
++		vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
++
++	acc_sp_velocity(0) = uk(0,0);
++	acc_sp_velocity(1) = uk(0,1);
++
++	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
+ }
+

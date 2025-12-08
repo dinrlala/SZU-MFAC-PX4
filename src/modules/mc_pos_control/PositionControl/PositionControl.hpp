@@ -271,7 +271,6 @@ private:
 
 
 
-
 	// Limits
 	float _lim_vel_horizontal{}; ///< Horizontal velocity limit with feed forward and position control
 	float _lim_vel_up{}; ///< Upwards velocity limit with feed forward and position control

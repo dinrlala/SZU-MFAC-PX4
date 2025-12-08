@@ -284,3 +284,17 @@ PARAM_DEFINE_FLOAT(MPC_XY_VEL_D_ACC, 0.2f);
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_FLOAT(MPC_MF_XY_T2L, 0.15f);
+
+
+
+/**
+ *
+ * MFAC XY轴加速度输出限幅
+ *
+ * @min 0
+ * @max 200
+ * @decimal 4
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_XY_ALI, 2.f);

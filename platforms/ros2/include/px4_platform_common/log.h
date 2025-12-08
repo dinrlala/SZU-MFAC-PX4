@@ -35,7 +35,8 @@
 
 //#include <rclcpp/logging.hpp>
 
-#define PX4_INFO(X) 	printf(X) //RCLCPP_INFO(get_logger(), X)
+//#define PX4_INFO(X) 	printf(X) //RCLCPP_INFO(get_logger(), X)
+#define PX4_INFO(...)  printf(__VA_ARGS__)
 #define PX4_WARN(X) 	printf(X) //RCLCPP_WARN(get_logger(), X)
 #define PX4_ERR(X) 	printf(X) //RCLCPP_ERR(get_logger(), X)
 #define PX4_DEBUG(...) 	printf(X) //RCLCPP_DEBUG(get_logger(), __VA_ARGS__)

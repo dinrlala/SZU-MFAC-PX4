@@ -169,6 +169,9 @@ private:
 		//速度环控制器参数限制
 		(ParamFloat<px4::params::MPC_MF_XY_T2L>)       _mfac_vel_thetac_xy_thetac2Limit,
 
+		//CDL-MFAC加速度输出限制
+		(ParamFloat<px4::params::MPC_MF_XY_ALI>)       _mfac_vel_acc_xy_Limit,
+
 		//是否固定增益选择
 		(ParamInt<px4::params::MFAC_SOL_MODE>)        _mfac_sol_mode,
 

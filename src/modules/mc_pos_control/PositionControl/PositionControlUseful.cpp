@@ -49,18 +49,12 @@ using namespace matrix;
 
 enum class MFACState { PID_INIT, MFAC_ACTIVE };
 static MFACState _mfac_state = MFACState::PID_INIT;
-const float eps = 1e-6f;
 
 static inline void mfac_shift_histories(
 	matrix::Matrix<float,3,3> &uk,
 	matrix::Matrix<float,3,3> &ek)
 {
 	for (int i = 0; i < 3; i++) {
-		uk(2,i) = uk(1,i);
-		uk(1,i) = uk(0,i);
-		if(uk(2,i)-uk(1,i)<=eps){
-			uk(1,i)=uk(2,i)+eps;
-		}
 		ek(2,i) = ek(1,i);
 		ek(1,i) = ek(0,i);
 	}
@@ -134,12 +128,6 @@ void PositionControl::setXYThetac2Limit(const float &LIMIT)//设置使用什么C
 {
 	_mfac_vel_thetac_xy_thetac2Limit = LIMIT;
 }
-
-void PositionControl::setXYAccLimit(const float &LIMITACC)//设置使用什么Controller
-{
-	_mfac_vel_acc_xy_Limit = LIMITACC;
-}
-
 
 
 
@@ -378,24 +366,21 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
     			}
 			//求XY的thetamk
 			for(int i =0;i<2;i++){
-				float thetamTemp = _mfac_vel_lambdam(i)+(uk(1,i)-uk(2,i))*(uk(1,i)-uk(2,i));
-				if( thetamTemp < eps){
-					thetamTemp=eps;
-				}
-				thetamk(0,i)=thetamk(1,i)+(_vel(i)-_velk1(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/thetamTemp;
+				thetamk(0,i)=thetamk(1,i)+(_vel(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/(_mfac_vel_lambdam(i)+(uk(1,i)-uk(2,i))*(uk(1,i)-uk(2,i)));
 			}
 			//求XY的thetack
 			for(int i=0;i<2;i++){
 				float Hknorm = Hk.col(i).norm();
 				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
 				float tempThetac=(get_thetack1(thetack,i).transpose()*Hk_col)(0, 0);
+				//这里有个问题，拿不到yd(k+1)
 				edit_thetack(thetack,i,get_thetack1(thetack,i)+(thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac))/(_mfac_vel_lambdac(i)+Hknorm*Hknorm));
 			}
 			//误差变化量的限制,第二项
 			for(int i=0;i<2;i++){
 				matrix::Vector3f thetacktemp=get_thetack(thetack,i);
-				if(thetacktemp(1)>_mfac_vel_thetac_xy_thetac2Limit||thetacktemp(1)<-_mfac_vel_thetac_xy_thetac2Limit)
-				thetacktemp(1)=sign(thetacktemp(1))*_mfac_vel_thetac_xy_thetac2Limit;
+				if(thetacktemp(1)>_mfac_vel_thetac_xy_thetac2Limit)
+				thetacktemp(1)=_mfac_vel_thetac_xy_thetac2Limit;
 				edit_thetack(thetack,i,thetacktemp);
 			}
 			//求XY的uk
@@ -436,11 +421,6 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 		}
 		//最后Z轴输出还是用PID
 		Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
-		//xy轴加速度限幅
-		for(int i=0;i<2;i++){
-			if(uk(0,i)>_mfac_vel_acc_xy_Limit||uk(0,1)<-_mfac_vel_acc_xy_Limit)
-			uk(0,i)=sign(uk(0,i))*_mfac_vel_acc_xy_Limit;
-		}
 		//其余替换为MFAC计算输出量
 		for(int i=0;i<2;i++){
 			acc_sp_velocity(i)=uk(0,i);
@@ -455,12 +435,9 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 
 	//Z轴速度限制
 	_vel_int(2) = math::constrain(_vel_int(2), -CONSTANTS_ONE_G, CONSTANTS_ONE_G);
-	for(int i=0;i<3;i++){
-		_velk1(i)=_vel(i);
-	}
+
 
 	//额外处理
-
 
 
 	_accelerationControl();//计算推力
@@ -535,57 +512,10 @@ void PositionControl::_accelerationControl()//计算推力的
 	ControlMath::limitTilt(body_z, Vector3f(0, 0, 1), _lim_tilt);
 	// Convert to thrust assuming hover thrust produces standard gravity
 	const float thrust_ned_z = _acc_sp(2) * (_hover_thrust / CONSTANTS_ONE_G) - _hover_thrust;
-
-
 	// Project thrust to planned body attitude
-	float cos_ned_body = (Vector3f(0, 0, 1).dot(body_z));
-
-	// 防止出现 NaN / inf,给个最小值
-    	if (!PX4_ISFINITE(cos_ned_body)) {
-        	cos_ned_body = eps;
-    	}
-
-        float collective_thrust = math::min(thrust_ned_z / cos_ned_body, -_lim_thr_min);
-
-	 if (cos_ned_body > eps) {
-        // 正常情况：
-        // 根据当前倾斜角，将期望的 NED 推力投影到机体方向
-        	collective_thrust = thrust_ned_z / cos_ned_body;
-    	} else {
-        // 异常情况：
-        // 当机体几乎水平或姿态异常时，避免除以接近 0 的值
-        // 不做投影放大，使用保守的推力值
-        	collective_thrust = thrust_ned_z;
-    	}
-	// 对总推力进行上下限约束（NED 坐标系下推力为负值）
-    	// -_lim_thr_max ：最大向上推力
-    	// -_lim_thr_min ：最小向上推力（接近 0）
-    	const float thrust_min_allowed = -_lim_thr_max;
-    	const float thrust_max_allowed = -_lim_thr_min;
-    	collective_thrust = math::constrain(
-       		collective_thrust,
-        	thrust_min_allowed,
-        	thrust_max_allowed
-    	);
-
-    	// 生成三轴推力设定值
+	const float cos_ned_body = (Vector3f(0, 0, 1).dot(body_z));
+	const float collective_thrust = math::min(thrust_ned_z / cos_ned_body, -_lim_thr_min);
 	_thr_sp = body_z * collective_thrust;
-
-
-	static int print_counter = 0;
-
-	print_counter++;
-	if (print_counter >= 250) { // 250 Hz / 50 = 5 Hz
-    		print_counter = 0;
-
-    		PX4_INFO(
-        		"accSp=[%.2f %.2f %.2f], thrust=%.3f",
-        		(double)_acc_sp(0),
-        		(double)_acc_sp(1),
-        		(double)_acc_sp(2),
-        		(double)_thr_sp(2)
-    		);
-	}
 }
 
 bool PositionControl::_inputValid()

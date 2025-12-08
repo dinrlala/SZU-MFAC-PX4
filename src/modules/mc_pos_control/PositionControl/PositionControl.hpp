@@ -133,6 +133,12 @@ public:
 	 * @param LIMIT
 	 */
 
+	 void setXYAccLimit(const float &LIMITACC);
+	/**
+	 * 修改参数限制
+	 * @param LIMITACC
+	 */
+
 
 	void setVelocityLimits(const float vel_horizontal, const float vel_up, float vel_down);
 
@@ -257,6 +263,12 @@ private:
 
 	//控制器参数变化限制
 	float _mfac_vel_thetac_xy_thetac2Limit;
+
+	//XY加速度输出限幅
+	float _mfac_vel_acc_xy_Limit;
+
+	//上一时刻的速度
+	matrix::Vector3f _velk1;
 
 	//PFDL-MFAC用到的参数
 	matrix::Matrix3f Hk;

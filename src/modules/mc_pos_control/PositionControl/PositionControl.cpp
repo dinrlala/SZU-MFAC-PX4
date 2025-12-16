@@ -50,6 +50,8 @@ using namespace matrix;
 enum class MFACState { PID_INIT, MFAC_ACTIVE };
 static MFACState _mfac_state = MFACState::PID_INIT;
 const float eps = 1e-6f;
+static int print_counter = 0;
+//static int update_counter = 5;
 
 static inline void mfac_shift_histories(
 	matrix::Matrix<float,3,3> &uk,
@@ -58,9 +60,6 @@ static inline void mfac_shift_histories(
 	for (int i = 0; i < 3; i++) {
 		uk(2,i) = uk(1,i);
 		uk(1,i) = uk(0,i);
-		if(uk(2,i)-uk(1,i)<=eps){
-			uk(1,i)=uk(2,i)+eps;
-		}
 		ek(2,i) = ek(1,i);
 		ek(1,i) = ek(0,i);
 	}
@@ -94,9 +93,9 @@ Vector3f get_thetack1(const Matrix<float, 6, 3>& mat, size_t col_index) {
     	return result;
 }
 
-void edit_thetack(Matrix<float, 6, 3>& mat, size_t col_index, const Vector3f& value) {
+void edit_thetack(Matrix<float, 6, 3>& targetMatrix, size_t col_index, const Vector3f& targetVector) {
     for (size_t i = 0; i < 3; ++i) {
-        mat(i, col_index) = value(i);
+        targetMatrix(i, col_index) = targetVector(i);
     }
 }
 
@@ -125,17 +124,29 @@ void PositionControl::setControllerMode(const int &MODE)//设置使用什么Cont
 	_vel_con_choose = MODE;
 }
 
-void PositionControl::setMFACMode(const int &MODE)//设置使用什么Controller
+void PositionControl::setMFACMode(const int &MODE)//设置是否固定增益
 {
 	_mfac_sol_mode = MODE;
 }
 
-void PositionControl::setXYThetac2Limit(const float &LIMIT)//设置使用什么Controller
+void PositionControl::setMFACPIDInit(const int &TIME)//设置PID初始化时间
+{
+	_mfac_pid_init = TIME;
+}
+
+void PositionControl::setXYThetac2Limit(const float &LIMIT)//设置thetac限制
 {
 	_mfac_vel_thetac_xy_thetac2Limit = LIMIT;
 }
 
-void PositionControl::setXYAccLimit(const float &LIMITACC)//设置使用什么Controller
+
+void PositionControl::setXYThetac3Limit(const float &LIMIT3)//设置thetac限制
+{
+	_mfac_vel_thetac_xy_thetac3Limit = LIMIT3;
+}
+
+
+void PositionControl::setXYAccLimit(const float &LIMITACC)//设XY加速度限制
 {
 	_mfac_vel_acc_xy_Limit = LIMITACC;
 }
@@ -207,7 +218,7 @@ bool PositionControl::update(const float dt)
 		case 0: //位置PID
 			_velocityControl(dt);
 			break;
-		case 1: //PDL-MFAC，近似增量PID
+		case 1: //CDL-MFAC
 			_velocityControlMFAC(dt);
 			break;
 		default://默认PID
@@ -252,57 +263,7 @@ void PositionControl::_velocityControl(const float dt)
 
 	// No control input from setpoints or corresponding states which are NAN
 	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
-
-	_accelerationControl();
-
-	// Integrator anti-windup in vertical direction
-	if ((_thr_sp(2) >= -_lim_thr_min && vel_error(2) >= 0.f) ||
-	    (_thr_sp(2) <= -_lim_thr_max && vel_error(2) <= 0.f)) {
-		vel_error(2) = 0.f;
-	}
-
-	// Prioritize vertical control while keeping a horizontal margin
-	const Vector2f thrust_sp_xy(_thr_sp);
-	const float thrust_sp_xy_norm = thrust_sp_xy.norm();
-	const float thrust_max_squared = math::sq(_lim_thr_max);
-
-	// Determine how much vertical thrust is left keeping horizontal margin
-	const float allocated_horizontal_thrust = math::min(thrust_sp_xy_norm, _lim_thr_xy_margin);
-	const float thrust_z_max_squared = thrust_max_squared - math::sq(allocated_horizontal_thrust);
-
-	// Saturate maximal vertical thrust
-	_thr_sp(2) = math::max(_thr_sp(2), -sqrtf(thrust_z_max_squared));
-
-	// Determine how much horizontal thrust is left after prioritizing vertical control
-	const float thrust_max_xy_squared = thrust_max_squared - math::sq(_thr_sp(2));
-	float thrust_max_xy = 0.f;
-
-	if (thrust_max_xy_squared > 0.f) {
-		thrust_max_xy = sqrtf(thrust_max_xy_squared);
-	}
-
-	// Saturate thrust in horizontal direction
-	if (thrust_sp_xy_norm > thrust_max_xy) {
-		_thr_sp.xy() = thrust_sp_xy / thrust_sp_xy_norm * thrust_max_xy;
-	}
-
-	// Use tracking Anti-Windup for horizontal direction: during saturation, the integrator is used to unsaturate the output
-	// see Anti-Reset Windup for PID controllers, L.Rundqwist, 1990
-	const Vector2f acc_sp_xy_produced = Vector2f(_thr_sp) * (CONSTANTS_ONE_G / _hover_thrust);
-	const float arw_gain = 2.f / _gain_vel_p(0);
-
-	// The produced acceleration can be greater or smaller than the desired acceleration due to the saturations and the actual vertical thrust (computed independently).
-	// The ARW loop needs to run if the signal is saturated only.
-	const Vector2f acc_sp_xy = _acc_sp.xy();
-	const Vector2f acc_limited_xy = (acc_sp_xy.norm_squared() > acc_sp_xy_produced.norm_squared())
-					? acc_sp_xy_produced
-					: acc_sp_xy;
-	vel_error.xy() = Vector2f(vel_error) - arw_gain * (acc_sp_xy - acc_limited_xy);
-
-	// Make sure integral doesn't get NAN
-	ControlMath::setZeroIfNanVector3f(vel_error);
-	// Update integral part of velocity control
-	_vel_int += vel_error.emult(_gain_vel_i) * dt;
+	_velocityControlMFAC(dt);
 }
 
 
@@ -310,6 +271,26 @@ void PositionControl::_velocityControl(const float dt)
 //速度环MFAC控制器
 void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 {
+	//入口保护，防止非法的速度指令
+	if (!_vel.isAllFinite() || !_vel_sp.isAllFinite()) {
+    		// 速度或速度指令非法，禁止 MFAC
+    		return;
+	}
+
+	//还是防止非法的速度指令
+	if (!_velk1.isAllFinite()) {
+    		_velk1 = _vel;
+	}
+
+	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
+	//保护性参数，配合限幅保护用
+	//const float thetac0_max = 20.0f;         // thetak0最大绝对值，经验值
+	//const float thetac1_max = _mfac_vel_thetac_xy_thetac2Limit > 0 ?
+        //_mfac_vel_thetac_xy_thetac2Limit : 5.0f; // fallback
+	//const float thetac2_max = _mfac_vel_thetac_xy_thetac3Limit > 0 ?
+        //_mfac_vel_thetac_xy_thetac3Limit : 5.0f;
+
+	if(_vel_con_choose==1){//省空间用
 	//这里thetack定义为一个6x3的矩阵，给未来的自己和后人，勿看也看不懂
 	//   x轴               y轴                  z轴
 	//  thetak_x(0)    thetak_y(0)        thetak_z(0)
@@ -319,59 +300,78 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	//  thetak1_x(1)    thetak1_y(1)        thetak1_z(1)
 	//  thetak1_x(2)    thetak1_y(2)        thetak1_z(2)
 
-	//速度误差
-	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
+	//速度误差历史更新
 
 	for(int i=0;i<3;i++){
 		ek(0,i)=_vel_sp(i)-_vel(i);
 	}
 	//thetack拼接成3X3矩阵
-	for (int i = 0; i < 2; i++) {
-    		_mfac_vel_thetac(0,i) = _mfac_vel_thetac_temp_xy(0);
-    		_mfac_vel_thetac(1,i) = _mfac_vel_thetac_temp_xy(1);
-    		_mfac_vel_thetac(2,i) = _mfac_vel_thetac_temp_xy(2);
-	}
-	_mfac_vel_thetac(0,2) = _mfac_vel_thetac_temp_z(0);
-    	_mfac_vel_thetac(1,2) = _mfac_vel_thetac_temp_z(1);
-    	_mfac_vel_thetac(2,2) = _mfac_vel_thetac_temp_z(2);
+	//for (int i = 0; i < 2; i++) {
+    	//	_mfac_vel_thetac(0,i) = _mfac_vel_thetac_temp_xy(0);
+    	//	_mfac_vel_thetac(1,i) = _mfac_vel_thetac_temp_xy(1);
+    	//	_mfac_vel_thetac(2,i) = _mfac_vel_thetac_temp_xy(2);
+	//}
+	//_mfac_vel_thetac(0,2) = _mfac_vel_thetac_temp_z(0);
+    	//_mfac_vel_thetac(1,2) = _mfac_vel_thetac_temp_z(1);
+    	//_mfac_vel_thetac(2,2) = _mfac_vel_thetac_temp_z(2);
 
 
 	if(_mfac_state == MFACState::PID_INIT){//如果未初始化，使用PID进行初始化
 		//初始化输入输出误差值，使用PID进行
 
 		Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
-		for(int i = 0;i < 3;i++){
-			uk(0,i)=acc_sp_velocity(i);
-			thetamk(1,i)=_mfac_vel_thetam(i);
-			for(int j = 0;j<3;j++){
-				thetack(j+3,i)=_mfac_vel_thetac(j,i);
-			}
-	 	}
+
 		ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
 		count++;
-		if(count>=2000){//初始化完毕
-			mfac_init_histories(uk, ek);
-			_mfac_state = MFACState::MFAC_ACTIVE;
-			count=0;
+		for (int i = 0; i < 3; i++) {
+                    	uk(0, i) = acc_sp_velocity(i);
+               	}
+		mfac_init_histories(uk, ek);
+		if(count>=_mfac_pid_init){//初始化完毕
+                	//初始化thetam
+                	for (int i = 0; i < 3; i++) {
+                    		thetamk(0, i) = _mfac_vel_thetam(i);
+                    		thetamk(1, i) = _mfac_vel_thetam(i);
+               		 }
+
+                	// 把参数填到 thetack 的两份历史（rows 0..2 和 3..5）
+                	//初始化thetac
+                	for (int j = 0; j < 3; j++) {
+                    		thetack(j + 0, 0) = _mfac_vel_thetac_temp_xy(j);
+                    		thetack(j + 3, 0) = _mfac_vel_thetac_temp_xy(j);
+               	 	}
+                	for (int j = 0; j < 3; j++) {
+                    		thetack(j + 0, 1) = _mfac_vel_thetac_temp_xy(j);
+                    		thetack(j + 3, 1) = _mfac_vel_thetac_temp_xy(j);
+                	}
+                	for (int j = 0; j < 3; j++) {
+                    		thetack(j + 0, 2) = _mfac_vel_thetac_temp_z(j);
+                    		thetack(j + 3, 2) = _mfac_vel_thetac_temp_z(j);
+               		 }
+                	//uk 的最新值为当前 PID 输出
+                _mfac_state = MFACState::MFAC_ACTIVE;
+                count = 0;
 		}
 	}
 
 	if(_mfac_state == MFACState::MFAC_ACTIVE){
+		//thetac和thetam的历史更新
 		for(int i = 0;i < 3;i++){
 			thetamk(1,i)=thetamk(0,i);
 			for(int j = 0;j<3;j++){
-				thetack(j+3,i)=_mfac_vel_thetac(j,i);
+				thetack(j+3,i)=thetack(j,i);
 			}
 	 	}
-
+		//更新历史信息ek,uk
 		mfac_shift_histories(uk, ek);
+
 		if(!_mfac_sol_mode){//自适应模式
 			//求Hk
 			for (int j = 0; j < 3; j++) {
         			Hk(0,j) = -ek(0,j);
     			}
     			for (int j = 0; j < 3; j++) {
-        			Hk(1,j)= ek(0,j) - ek(1,j);
+        			Hk(1,j) = ek(0,j) - ek(1,j);
     			}
     			for (int j = 0; j < 3; j++) {
         			Hk(2,j) = ek(1,j) - ek(2,j);
@@ -379,32 +379,101 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 			//求XY的thetamk
 			for(int i =0;i<2;i++){
 				float thetamTemp = _mfac_vel_lambdam(i)+(uk(1,i)-uk(2,i))*(uk(1,i)-uk(2,i));
-				if( thetamTemp < eps){
-					thetamTemp=eps;
-				}
 				thetamk(0,i)=thetamk(1,i)+(_vel(i)-_velk1(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/thetamTemp;
 			}
 			//求XY的thetack
 			for(int i=0;i<2;i++){
-				float Hknorm = Hk.col(i).norm();
+				matrix::Vector3f thetacik,thetacik1;
+				thetacik1 = get_thetack1(thetack,i);
 				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+				float Hknorm = Hk_col.norm();
 				float tempThetac=(get_thetack1(thetack,i).transpose()*Hk_col)(0, 0);
-				edit_thetack(thetack,i,get_thetack1(thetack,i)+(thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac))/(_mfac_vel_lambdac(i)+Hknorm*Hknorm));
+				thetacik = thetacik1 + (thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac))/(_mfac_vel_lambdac(i)+Hknorm*Hknorm);
+				//保护性措施
+				// 限幅保护
+    				//if (fabsf(thetacik(0)) > thetac0_max) thetacik(0) = sign(thetacik(0)) * thetac0_max;
+    				//if (fabsf(thetacik(1)) > thetac1_max) thetacik(1) = sign(thetacik(1)) * thetac1_max;
+    				//if (fabsf(thetacik(2)) > thetac2_max) thetacik(2) = sign(thetacik(2)) * thetac2_max;
+   				 //符号一致性保护(thetack(0))
+    				float Hk0 = Hk_col(0);
+    				if (fabsf(Hk0) > eps) {
+        				// 期望 thetac(0) * Hk0 > 0 (因为 uktemp = thetac^T * Hk，想让主项为正贡献)
+        				if (thetacik(0) * Hk0 < 0.f) {
+         			   	// 将主元强制为与 Hk0 同号的保守值（不直接取反大幅度变更）
+          			  	float safe_val = 0.05f * sign(Hk0); // 小值修正，防止突变
+           			 	thetacik(0) = safe_val;
+       			 		}
+				}
+   				 //平滑更新保护
+    				// 将新 thetacik 和 当前 thetac( rows 0..2 ) 做平滑融合，避免一次性跳变
+    				//const float alpha = 0.6f; // 新增量权重（0..1），越小更新越保守
+    				//matrix::Vector3f thetac_current = get_thetack(thetack, i); // rows 0..2
+    				//matrix::Vector3f thetac_new = thetac_current * (1.0f - alpha) + thetacik * alpha;
+				//edit_thetack(thetack,i,thetacik);
+			}
+			// 推力异常的处理
+			// 在调用本段前确保 Hk 已经计算，uk/ek 已 shift，thetamk(0/1) 可用
+
+			const float vel_delta_thresh = 0.01f;    // 速度变化很小时不要更新（单位 m/s）
+			const float thrust_sat_ratio = 0.90f;    // 当垂直推力接近这个比例认为受限
+			 // fallback
+			const float thetac_forget = 0.999f;      // 遗忘因子（<1 会缓慢衰减旧的thetac，防止长期累积），贴近1
+
+			// 计算当前垂直推力是否接近饱和，饱和则冻结更新
+			const float thrust_z_norm = fabsf(_thr_sp(2));
+			const float thrust_z_max = _lim_thr_max;
+			bool thrust_z_near_sat = (thrust_z_max > 1e-6f) && (thrust_z_norm > thrust_sat_ratio * thrust_z_max);
+
+			// 计算 Hk 范数（用于判断是否有激励）
+			for (int col = 0; col < 2; col++) {
+			//    matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(col));
+			//    float Hk_norm = Hk_col.norm();
+			//const float Hk_norm_thresh = 1e-4f;      // Hk 太小表示激励不足 -> 跳过更新
+    			// 若 Hk 激励不足，跳过本列的自适应更新（保留历史 thetac）
+   			// if (Hk_norm < Hk_norm_thresh) {
+       			 // 轻微遗忘，避免长期累积（保持一定衰减）
+        		//	for (int r = 0; r < 3; r++) {
+        		//	    thetack(r, col) *= thetac_forget;
+        		//	}
+        		//	continue;
+    			//}
+
+    			// 若垂直推力接近饱和，禁止 XY 自适应（避免学到被削弱的映射）
+    			if (thrust_z_near_sat) {
+        			for (int r = 0; r < 3; r++) {
+            			thetack(r, col) *= thetac_forget; // 只做遗忘，不做新学习
+        			}
+       			 continue;
+    			}
+    			// 若速度几乎没变化，跳过更新（避免噪声/积分导致学错）
+   			 if (fabsf(_vel(col) - _velk1(col)) < vel_delta_thresh) {
+        			for (int r = 0; r < 3; r++) {
+        			    thetack(r, col) *= thetac_forget;
+        			}
+        			continue;
+    			}
 			}
 			//误差变化量的限制,第二项
-			for(int i=0;i<2;i++){
-				matrix::Vector3f thetacktemp=get_thetack(thetack,i);
-				if(thetacktemp(1)>_mfac_vel_thetac_xy_thetac2Limit||thetacktemp(1)<-_mfac_vel_thetac_xy_thetac2Limit)
-				thetacktemp(1)=sign(thetacktemp(1))*_mfac_vel_thetac_xy_thetac2Limit;
-				edit_thetack(thetack,i,thetacktemp);
-			}
+			//for(int i=0;i<2;i++){
+			//	matrix::Vector3f thetacktemp=get_thetack(thetack,i);
+			//	if(thetacktemp(1)>_mfac_vel_thetac_xy_thetac2Limit||thetacktemp(1)<-_mfac_vel_thetac_xy_thetac2Limit)
+			//	thetacktemp(1)=sign(thetacktemp(1))*_mfac_vel_thetac_xy_thetac2Limit;
+			//	edit_thetack(thetack,i,thetacktemp);
+			//}
+			//误差变化量的限制,第三项
+			//for(int i=0;i<2;i++){
+			//	matrix::Vector3f thetacktemp=get_thetack(thetack,i);
+			//	if(thetacktemp(2)>_mfac_vel_thetac_xy_thetac3Limit||thetacktemp(2)<-_mfac_vel_thetac_xy_thetac3Limit)
+			//	thetacktemp(2)=sign(thetacktemp(2))*_mfac_vel_thetac_xy_thetac3Limit;
+			//	edit_thetack(thetack,i,thetacktemp);
+			//}
 			//求XY的uk
-			for(int i=0;i<2;i++){
-				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
-				float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
-				uk(0,i)=uk(1,i)+uktemp;
+				for(int i=0;i<2;i++){
+					matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+					float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
+					uk(0,i)=uk(1,i)+uktemp;
 				//更新uk
-			}
+				}
    	     }
 		else{//固定增益模式，调试用
 		   	for(int i = 0;i < 3;i++){
@@ -413,7 +482,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 		   	for(int i = 0;i < 3;i++){
 				for(int j = 0;j<3;j++){
 				thetack(j,i)=_mfac_vel_thetac(j,i);}
-		 	  }
+		 	}
 		  	 //求Hk
 		  	 for (int j = 0; j < 3; j++) {
    		       	 	Hk(0,j) = -ek(0,j);
@@ -424,21 +493,17 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
     		  	 for (int j = 0; j < 3; j++) {
     		      	 	Hk(2,j) = ek(1,j) - ek(2,j);
     		   	}
-
-
 			for(int i=0;i<2;i++){
 	 	  		matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
 	   			float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
 	  	 		uk(0,i)=uk(1,i)+uktemp;
-				uk(2,i)=uk(1,i);
-				uk(1,i)=uk(0,i);
 			}
 		}
 		//最后Z轴输出还是用PID
 		Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
 		//xy轴加速度限幅
 		for(int i=0;i<2;i++){
-			if(uk(0,i)>_mfac_vel_acc_xy_Limit||uk(0,1)<-_mfac_vel_acc_xy_Limit)
+			if(uk(0,i)>_mfac_vel_acc_xy_Limit||uk(0,i)<-_mfac_vel_acc_xy_Limit)
 			uk(0,i)=sign(uk(0,i))*_mfac_vel_acc_xy_Limit;
 		}
 		//其余替换为MFAC计算输出量
@@ -448,20 +513,32 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 		ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
 	}
 	//如果控制Z轴速度则多加一部分,否则用默认的PID控制
-	if(controlZ){
 
-
+	print_counter++;
+	if (print_counter >= 50) { // 250 Hz / 50 = 5 Hz
+		print_counter=0;
+    		PX4_INFO(
+        		"thetacX=[%.2f %.2f %.2f], thetamX=%.3f",
+        		(double)thetack(0,0),
+        		(double)thetack(1,0),
+        		(double)thetack(2,0),
+        		(double)thetamk(0,0)
+    		);
+		PX4_INFO(
+        		"thetacY=[%.2f %.2f %.2f], thetamY=%.3f",
+        		(double)thetack(0,1),
+        		(double)thetack(1,1),
+        		(double)thetack(2,1),
+        		(double)thetamk(0,1)
+    		);
 	}
-
 	//Z轴速度限制
 	_vel_int(2) = math::constrain(_vel_int(2), -CONSTANTS_ONE_G, CONSTANTS_ONE_G);
+	//记录上一时刻速度
 	for(int i=0;i<3;i++){
 		_velk1(i)=_vel(i);
 	}
-
-	//额外处理
-
-
+	}
 
 	_accelerationControl();//计算推力
 
@@ -572,20 +649,20 @@ void PositionControl::_accelerationControl()//计算推力的
 	_thr_sp = body_z * collective_thrust;
 
 
-	static int print_counter = 0;
+
 
 	print_counter++;
-	if (print_counter >= 250) { // 250 Hz / 50 = 5 Hz
-    		print_counter = 0;
-
-    		PX4_INFO(
-        		"accSp=[%.2f %.2f %.2f], thrust=%.3f",
-        		(double)_acc_sp(0),
-        		(double)_acc_sp(1),
-        		(double)_acc_sp(2),
-        		(double)_thr_sp(2)
-    		);
-	}
+	//if (print_counter >= 250) { // 250 Hz / 50 = 5 Hz
+    	//	print_counter = 0;
+//
+    	//	PX4_INFO(
+        //		"accSp=[%.2f %.2f %.2f], thrust=%.3f",
+        //		(double)_acc_sp(0),
+        //		(double)_acc_sp(1),
+        //		(double)_acc_sp(2),
+        //		(double)_thr_sp(2)
+    	//	);
+	//}
 }
 
 bool PositionControl::_inputValid()

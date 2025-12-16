@@ -126,11 +126,23 @@ public:
 	 * @param MODE
 	 */
 
+	 void setMFACPIDInit(const int &TIME);
+	/**
+	 * 设置是否使用固定增益
+	 * @param TIME
+	 */
+
 
 	void setXYThetac2Limit(const float &LIMIT);
 	/**
 	 * 修改参数限制
 	 * @param LIMIT
+	 */
+
+	 void setXYThetac3Limit(const float &LIMIT3);
+	/**
+	 * 修改参数限制
+	 * @param LIMIT3
 	 */
 
 	 void setXYAccLimit(const float &LIMITACC);
@@ -261,8 +273,12 @@ private:
 	//是否固定增益
 	int _mfac_sol_mode;
 
+	//PID初始化时间
+	int _mfac_pid_init;
+
 	//控制器参数变化限制
 	float _mfac_vel_thetac_xy_thetac2Limit;
+	float _mfac_vel_thetac_xy_thetac3Limit;
 
 	//XY加速度输出限幅
 	float _mfac_vel_acc_xy_Limit;

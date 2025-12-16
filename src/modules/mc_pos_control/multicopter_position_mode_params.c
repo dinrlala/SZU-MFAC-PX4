@@ -227,3 +227,17 @@ PARAM_DEFINE_INT32(VEL_CON_CHOOSE, 1);
  */
 PARAM_DEFINE_INT32(MFAC_SOL_MODE, 0);
 
+
+
+/**
+ * PID初始化时间，VALUES/250=SECONDS
+ *
+ *
+ * @min 0
+ * @max 2000
+ * @decimal 1
+ * @increment 1
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_INT32(MFAC_PID_INIT, 750);
+

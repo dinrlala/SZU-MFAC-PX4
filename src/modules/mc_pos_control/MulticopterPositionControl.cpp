@@ -178,7 +178,9 @@ void MulticopterPositionControl::parameters_update(bool force)
 		_control.setControllerMode(_param_vel_con_choose.get());
 		_control.setMFACMode(_mfac_sol_mode.get());
 		_control.setXYThetac2Limit(_mfac_vel_thetac_xy_thetac2Limit.get());
+		_control.setXYThetac3Limit(_mfac_vel_thetac_xy_thetac3Limit.get());
 		_control.setXYAccLimit(_mfac_vel_acc_xy_Limit.get());
+		_control.setMFACPIDInit(_mfac_pid_init.get());
 
 		_control.setHorizontalThrustMargin(_param_mpc_thr_xy_marg.get());
 		_control.decoupleHorizontalAndVecticalAcceleration(_param_mpc_acc_decouple.get());

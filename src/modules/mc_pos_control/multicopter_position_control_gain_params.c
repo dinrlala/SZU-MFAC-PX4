@@ -287,6 +287,19 @@ PARAM_DEFINE_FLOAT(MPC_MF_XY_T2L, 0.15f);
 
 
 
+
+/**
+ *
+ * 误差变化量的限制,第三项
+ *
+ * @min -200
+ * @max 200
+ * @decimal 4
+ * @increment 0.01
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_MF_XY_T3L, 0.15f);
+
 /**
  *
  * MFAC XY轴加速度输出限幅

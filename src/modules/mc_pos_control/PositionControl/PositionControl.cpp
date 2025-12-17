@@ -43,6 +43,9 @@
 #include <px4_platform_common/defines.h>
 #include <geo/geo.h>
 #include <px4_platform_common/log.h>
+#include <uORB/uORB.h>
+#include <uORB/topics/vehicle_land_detected.h>
+#include <uORB/topics/vehicle_status.h>
 //#include <Eigen/Core>
 
 using namespace matrix;
@@ -52,6 +55,7 @@ static MFACState _mfac_state = MFACState::PID_INIT;
 const float eps = 1e-6f;
 static int print_counter = 0;
 //static int update_counter = 5;
+vehicle_land_detected_s _land_detected{};//判断是否落地
 
 static inline void mfac_shift_histories(
 	matrix::Matrix<float,3,3> &uk,
@@ -271,18 +275,20 @@ void PositionControl::_velocityControl(const float dt)
 //速度环MFAC控制器
 void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 {
+	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
+	const float vel_err_thresh = 0.05f;   // m/s
+	const float vel_sp_thresh  = 0.05f;
+
 	//入口保护，防止非法的速度指令
-	if (!_vel.isAllFinite() || !_vel_sp.isAllFinite()) {
-    		// 速度或速度指令非法，禁止 MFAC
+	if ((!_vel.isAllFinite() || !_vel_sp.isAllFinite()) && _mfac_state == MFACState::PID_INIT) {
     		return;
 	}
+
 
 	//还是防止非法的速度指令
 	if (!_velk1.isAllFinite()) {
     		_velk1 = _vel;
 	}
-
-	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
 	//保护性参数，配合限幅保护用
 	//const float thetac0_max = 20.0f;         // thetak0最大绝对值，经验值
 	//const float thetac1_max = _mfac_vel_thetac_xy_thetac2Limit > 0 ?
@@ -389,27 +395,27 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 				float Hknorm = Hk_col.norm();
 				float tempThetac=(get_thetack1(thetack,i).transpose()*Hk_col)(0, 0);
 				thetacik = thetacik1 + (thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac))/(_mfac_vel_lambdac(i)+Hknorm*Hknorm);
-				//保护性措施
+				//**************保护性措施***************************************
 				// 限幅保护
     				//if (fabsf(thetacik(0)) > thetac0_max) thetacik(0) = sign(thetacik(0)) * thetac0_max;
     				//if (fabsf(thetacik(1)) > thetac1_max) thetacik(1) = sign(thetacik(1)) * thetac1_max;
     				//if (fabsf(thetacik(2)) > thetac2_max) thetacik(2) = sign(thetacik(2)) * thetac2_max;
    				 //符号一致性保护(thetack(0))
-    				float Hk0 = Hk_col(0);
-    				if (fabsf(Hk0) > eps) {
+    				//float Hk0 = Hk_col(0);
+    				//if (fabsf(Hk0) > eps) {
         				// 期望 thetac(0) * Hk0 > 0 (因为 uktemp = thetac^T * Hk，想让主项为正贡献)
-        				if (thetacik(0) * Hk0 < 0.f) {
+        			//	if (thetacik(0) * Hk0 < 0.f) {
          			   	// 将主元强制为与 Hk0 同号的保守值（不直接取反大幅度变更）
-          			  	float safe_val = 0.05f * sign(Hk0); // 小值修正，防止突变
-           			 	thetacik(0) = safe_val;
-       			 		}
-				}
-   				 //平滑更新保护
+          			// 	float safe_val = 0.05f * sign(Hk0); // 小值修正，防止突变
+           			// 	thetacik(0) = safe_val;
+       			 	//	}
+				//}
+   				//平滑更新保护
     				// 将新 thetacik 和 当前 thetac( rows 0..2 ) 做平滑融合，避免一次性跳变
-    				//const float alpha = 0.6f; // 新增量权重（0..1），越小更新越保守
-    				//matrix::Vector3f thetac_current = get_thetack(thetack, i); // rows 0..2
-    				//matrix::Vector3f thetac_new = thetac_current * (1.0f - alpha) + thetacik * alpha;
-				//edit_thetack(thetack,i,thetacik);
+    				const float alpha = 0.6f; // 新增量权重（0..1），越小更新越保守
+    				matrix::Vector3f thetac_current = get_thetack(thetack, i); // rows 0..2
+    				matrix::Vector3f thetac_new = thetac_current * (1.0f - alpha) + thetacik * alpha;
+				edit_thetack(thetack,i,thetac_new);
 			}
 			// 推力异常的处理
 			// 在调用本段前确保 Hk 已经计算，uk/ek 已 shift，thetamk(0/1) 可用
@@ -468,12 +474,21 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 			//	edit_thetack(thetack,i,thetacktemp);
 			//}
 			//求XY的uk
-				for(int i=0;i<2;i++){
-					matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
-					float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
-					uk(0,i)=uk(1,i)+uktemp;
-				//更新uk
+			for(int i=0;i<2;i++){
+				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
+				float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
+				uk(0,i)=uk(1,i)+uktemp;
+			//更新uk
+				bool has_excitation =
+    					fabsf(_vel_sp(i)) > vel_sp_thresh ||
+    					fabsf(_vel(i))    > vel_err_thresh;
+				if (!has_excitation) {
+    				//判断为自激励则冻结thetack和u,只允许遗忘。
+    					uk(0,i) = uk(1,i);
+    					thetack.col(i) *= 0.999f;
+    					continue;
 				}
+			}
    	     }
 		else{//固定增益模式，调试用
 		   	for(int i = 0;i < 3;i++){
@@ -539,7 +554,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 		_velk1(i)=_vel(i);
 	}
 	}
-
+	//MFAC_EXIT:
 	_accelerationControl();//计算推力
 
 	// 垂直方向推力抗积分饱和

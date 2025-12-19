@@ -1,3 +1,7 @@
+## 本分支为修改速度环控制器为CFDLm-MFAC的PX4源码
+谨慎使用。
+
+
 # PX4 Drone Autopilot
 
 [![Releases](https://img.shields.io/github/release/PX4/PX4-Autopilot.svg)](https://github.com/PX4/PX4-Autopilot/releases) [![DOI](https://zenodo.org/badge/22634/PX4/PX4-Autopilot.svg)](https://zenodo.org/badge/latestdoi/22634/PX4/PX4-Autopilot)

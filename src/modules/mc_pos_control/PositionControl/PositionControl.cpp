@@ -400,7 +400,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
     				//if (fabsf(thetacik(0)) > thetac0_max) thetacik(0) = sign(thetacik(0)) * thetac0_max;
     				//if (fabsf(thetacik(1)) > thetac1_max) thetacik(1) = sign(thetacik(1)) * thetac1_max;
     				//if (fabsf(thetacik(2)) > thetac2_max) thetacik(2) = sign(thetacik(2)) * thetac2_max;
-   				 //符号一致性保护(thetack(0))
+   				 //主元符号一致性保护
     				//float Hk0 = Hk_col(0);
     				//if (fabsf(Hk0) > eps) {
         				// 期望 thetac(0) * Hk0 > 0 (因为 uktemp = thetac^T * Hk，想让主项为正贡献)
@@ -417,7 +417,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
     				matrix::Vector3f thetac_new = thetac_current * (1.0f - alpha) + thetacik * alpha;
 				edit_thetack(thetack,i,thetac_new);
 			}
-			// 推力异常的处理
+			// 推力异常处理
 			// 在调用本段前确保 Hk 已经计算，uk/ek 已 shift，thetamk(0/1) 可用
 
 			const float vel_delta_thresh = 0.01f;    // 速度变化很小时不要更新（单位 m/s）

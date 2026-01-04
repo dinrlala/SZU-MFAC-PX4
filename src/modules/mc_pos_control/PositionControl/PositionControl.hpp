@@ -42,8 +42,14 @@
 #include <lib/mathlib/mathlib.h>
 #include <matrix/matrix/math.hpp>
 #include <uORB/topics/trajectory_setpoint.h>
+//uORB
+#include <uORB/uORB.h>
+#include <uORB/topics/trajectory_setpoint.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
 #include <uORB/topics/vehicle_local_position_setpoint.h>
+#include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/vehicle_land_detected.h>
+
 //#include <Eigen/Core>
 
 struct PositionControlStates {
@@ -52,6 +58,12 @@ struct PositionControlStates {
 	matrix::Vector3f acceleration;
 	float yaw;
 };
+
+enum class MFACState {
+	PID_INIT = 0,
+	MFAC_ACTIVE
+};
+
 
 /**
  * 	Core Position-Control for MC.
@@ -76,6 +88,22 @@ struct PositionControlStates {
 class PositionControl
 {
 public:
+	//因为在PositionControl里面实际无法直接获得飞机状态，需要在MulticopterPositionControl里面取
+    	void forcePIDInit()
+    	{
+        	_mfac_state = MFACState::PID_INIT;
+        	count = 0;
+        	ifInit = false;
+    	}
+
+    	void allowMFAC(bool enable)
+   	 {
+        	_mfac_allow = enable;
+        	if (!enable) {
+            		forcePIDInit();
+        	}
+    	}
+
 
 	PositionControl() = default;
 	~PositionControl() = default;
@@ -151,6 +179,9 @@ public:
 	 * @param LIMITACC
 	 */
 
+	//gate
+	void setVehicleStatus(const vehicle_status_s &s) { _vehicle_status = s; }
+	void setLandDetected(const vehicle_land_detected_s &l) { _land_detected = l; }
 
 	void setVelocityLimits(const float vel_horizontal, const float vel_up, float vel_down);
 
@@ -283,8 +314,12 @@ private:
 	//XY加速度输出限幅
 	float _mfac_vel_acc_xy_Limit;
 
-	//上一时刻的速度
-	matrix::Vector3f _velk1;
+	//上一时刻的速度,基于初始化值
+	matrix::Vector3f _velk1{0.f, 0.f, 0.f};
+
+	//外部接口判断状态机
+	bool _mfac_allow{false};
+
 
 	//PFDL-MFAC用到的参数
 	matrix::Matrix3f Hk;
@@ -296,7 +331,12 @@ private:
 	bool ifInit = FALSE;
 	bool controlZ = FALSE;
 	int count=0;//初始化计时
+	//状态判断
+	MFACState _mfac_state{MFACState::PID_INIT};
 
+	//gate
+	vehicle_status_s _vehicle_status{};//uORB设备状态
+	vehicle_land_detected_s _land_detected{};//uORB落地检测
 
 
 	// Limits

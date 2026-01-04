@@ -43,19 +43,23 @@
 #include <px4_platform_common/defines.h>
 #include <geo/geo.h>
 #include <px4_platform_common/log.h>
+//uORB
 #include <uORB/uORB.h>
-#include <uORB/topics/vehicle_land_detected.h>
+#include <uORB/topics/trajectory_setpoint.h>
+#include <uORB/topics/vehicle_attitude_setpoint.h>
+#include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/vehicle_land_detected.h>
+
 //#include <Eigen/Core>
 
 using namespace matrix;
 
-enum class MFACState { PID_INIT, MFAC_ACTIVE };
-static MFACState _mfac_state = MFACState::PID_INIT;
+//enum class MFACState { PID_INIT, MFAC_ACTIVE };
+//static MFACState _mfac_state = MFACState::PID_INIT;
 const float eps = 1e-6f;
 static int print_counter = 0;
 //static int update_counter = 5;
-vehicle_land_detected_s _land_detected{};//判断是否落地
 
 static inline void mfac_shift_histories(
 	matrix::Matrix<float,3,3> &uk,
@@ -267,7 +271,57 @@ void PositionControl::_velocityControl(const float dt)
 
 	// No control input from setpoints or corresponding states which are NAN
 	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
-	_velocityControlMFAC(dt);
+
+	_accelerationControl();
+
+	// Integrator anti-windup in vertical direction
+	if ((_thr_sp(2) >= -_lim_thr_min && vel_error(2) >= 0.f) ||
+	    (_thr_sp(2) <= -_lim_thr_max && vel_error(2) <= 0.f)) {
+		vel_error(2) = 0.f;
+	}
+
+	// Prioritize vertical control while keeping a horizontal margin
+	const Vector2f thrust_sp_xy(_thr_sp);
+	const float thrust_sp_xy_norm = thrust_sp_xy.norm();
+	const float thrust_max_squared = math::sq(_lim_thr_max);
+
+	// Determine how much vertical thrust is left keeping horizontal margin
+	const float allocated_horizontal_thrust = math::min(thrust_sp_xy_norm, _lim_thr_xy_margin);
+	const float thrust_z_max_squared = thrust_max_squared - math::sq(allocated_horizontal_thrust);
+
+	// Saturate maximal vertical thrust
+	_thr_sp(2) = math::max(_thr_sp(2), -sqrtf(thrust_z_max_squared));
+
+	// Determine how much horizontal thrust is left after prioritizing vertical control
+	const float thrust_max_xy_squared = thrust_max_squared - math::sq(_thr_sp(2));
+	float thrust_max_xy = 0.f;
+
+	if (thrust_max_xy_squared > 0.f) {
+		thrust_max_xy = sqrtf(thrust_max_xy_squared);
+	}
+
+	// Saturate thrust in horizontal direction
+	if (thrust_sp_xy_norm > thrust_max_xy) {
+		_thr_sp.xy() = thrust_sp_xy / thrust_sp_xy_norm * thrust_max_xy;
+	}
+
+	// Use tracking Anti-Windup for horizontal direction: during saturation, the integrator is used to unsaturate the output
+	// see Anti-Reset Windup for PID controllers, L.Rundqwist, 1990
+	const Vector2f acc_sp_xy_produced = Vector2f(_thr_sp) * (CONSTANTS_ONE_G / _hover_thrust);
+	const float arw_gain = 2.f / _gain_vel_p(0);
+
+	// The produced acceleration can be greater or smaller than the desired acceleration due to the saturations and the actual vertical thrust (computed independently).
+	// The ARW loop needs to run if the signal is saturated only.
+	const Vector2f acc_sp_xy = _acc_sp.xy();
+	const Vector2f acc_limited_xy = (acc_sp_xy.norm_squared() > acc_sp_xy_produced.norm_squared())
+					? acc_sp_xy_produced
+					: acc_sp_xy;
+	vel_error.xy() = Vector2f(vel_error) - arw_gain * (acc_sp_xy - acc_limited_xy);
+
+	// Make sure integral doesn't get NAN
+	ControlMath::setZeroIfNanVector3f(vel_error);
+	// Update integral part of velocity control
+	_vel_int += vel_error.emult(_gain_vel_i) * dt;
 }
 
 
@@ -275,9 +329,30 @@ void PositionControl::_velocityControl(const float dt)
 //速度环MFAC控制器
 void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 {
+	//const bool armed = (_vehicle_status.arming_state == vehicle_status_s::ARMING_STATE_ARMED);
+	//const bool landed = _land_detected.landed;
 	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
 	const float vel_err_thresh = 0.05f;   // m/s
 	const float vel_sp_thresh  = 0.05f;
+
+	if (!_mfac_allow) {
+        	//未解锁不进入初始化阶段
+        	_velocityControl(dt);
+        	return;
+    	}
+
+
+	//if (landed) {
+   	// 	_mfac_state = MFACState::PID_INIT;
+
+    	//	Vector3f acc_sp_velocity =
+        //		vel_error.emult(_gain_vel_p)
+        //		+ _vel_int
+        //		- _vel_dot.emult(_gain_vel_d);
+
+    	//	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
+    	//return;
+	//}
 
 	//入口保护，防止非法的速度指令
 	if ((!_vel.isAllFinite() || !_vel_sp.isAllFinite()) && _mfac_state == MFACState::PID_INIT) {
@@ -666,7 +741,7 @@ void PositionControl::_accelerationControl()//计算推力的
 
 
 
-	print_counter++;
+	//print_counter++;
 	//if (print_counter >= 250) { // 250 Hz / 50 = 5 Hz
     	//	print_counter = 0;
 //

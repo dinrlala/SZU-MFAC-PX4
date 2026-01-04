@@ -469,6 +469,9 @@ void MulticopterPositionControl::Run()
 			const bool flying                    = (_takeoff.getTakeoffState() >= TakeoffState::flight);
 			const bool flying_but_ground_contact = (flying && _vehicle_land_detected.ground_contact);
 
+			//通过接口回传PositionControl当前的飞机状态
+			_control.allowMFAC(flying && !flying_but_ground_contact);
+
 			if (!flying) {
 				_control.setHoverThrust(_param_mpc_thr_hover.get());
 			}

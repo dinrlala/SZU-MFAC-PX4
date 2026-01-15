@@ -420,14 +420,20 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
                 	for (int j = 0; j < 3; j++) {
                     		thetack(j + 0, 0) = _mfac_vel_thetac_temp_xy(j);
                     		thetack(j + 3, 0) = _mfac_vel_thetac_temp_xy(j);
+				thetack_init(j + 0, 0) = _mfac_vel_thetac_temp_xy(j);
+                    		thetack_init(j + 3, 0) = _mfac_vel_thetac_temp_xy(j);
                	 	}
                 	for (int j = 0; j < 3; j++) {
                     		thetack(j + 0, 1) = _mfac_vel_thetac_temp_xy(j);
                     		thetack(j + 3, 1) = _mfac_vel_thetac_temp_xy(j);
+				thetack_init(j + 0, 1) = _mfac_vel_thetac_temp_xy(j);
+                    		thetack_init(j + 3, 1) = _mfac_vel_thetac_temp_xy(j);
                 	}
                 	for (int j = 0; j < 3; j++) {
                     		thetack(j + 0, 2) = _mfac_vel_thetac_temp_z(j);
                     		thetack(j + 3, 2) = _mfac_vel_thetac_temp_z(j);
+				thetack_init(j + 0, 2) = _mfac_vel_thetac_temp_z(j);
+                    		thetack_init(j + 3, 2) = _mfac_vel_thetac_temp_z(j);
                		 }
                 	//uk 的最新值为当前 PID 输出
                 _mfac_state = MFACState::MFAC_ACTIVE;
@@ -498,7 +504,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 			const float vel_delta_thresh = 0.01f;    // 速度变化很小时不要更新（单位 m/s）
 			const float thrust_sat_ratio = 0.90f;    // 当垂直推力接近这个比例认为受限
 			 // fallback
-			const float thetac_forget = 0.999f;      // 遗忘因子（<1 会缓慢衰减旧的thetac，防止长期累积），贴近1
+			const float thetac_forget = 0.950f;      // 遗忘因子（<1 会缓慢衰减旧的thetac，防止长期累积），贴近1
 
 			// 计算当前垂直推力是否接近饱和，饱和则冻结更新
 			const float thrust_z_norm = fabsf(_thr_sp(2));
@@ -522,14 +528,14 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
     			// 若垂直推力接近饱和，禁止 XY 自适应（避免学到被削弱的映射）
     			if (thrust_z_near_sat) {
         			for (int r = 0; r < 3; r++) {
-            			thetack(r, col) *= thetac_forget; // 只做遗忘，不做新学习
+            			thetack(r, col) = thetac_forget*thetack(r, col)+(1-thetac_forget)*thetack_init(r,col); // 只做遗忘，不做新学习
         			}
        			 continue;
     			}
     			// 若速度几乎没变化，跳过更新（避免噪声/积分导致学错）
    			 if (fabsf(_vel(col) - _velk1(col)) < vel_delta_thresh) {
         			for (int r = 0; r < 3; r++) {
-        			    thetack(r, col) *= thetac_forget;
+        			    thetack(r, col)=thetac_forget*thetack(r, col)+(1-thetac_forget)*thetack_init(r,col);
         			}
         			continue;
     			}
@@ -549,7 +555,9 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 			//	edit_thetack(thetack,i,thetacktemp);
 			//}
 			//求XY的uk
+			//float acc_change_limit = 0.01f; // 每步允许的最大加速度变化量
 			for(int i=0;i<2;i++){
+				//float acc_delta = uk(0, i) - uk(1, i);
 				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
 				float uktemp = (get_thetack(thetack,i).transpose()*Hk_col)(0, 0);
 				uk(0,i)=uk(1,i)+uktemp;
@@ -560,10 +568,21 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 				if (!has_excitation) {
     				//判断为自激励则冻结thetack和u,只允许遗忘。
     					uk(0,i) = uk(1,i);
-    					thetack.col(i) *= 0.999f;
+    					for (int row = 0; row < 6; row++) {
+   					 	thetack(row, i) = thetac_forget * thetack(row, i) + (1.f - thetac_forget) * thetack_init(row, i);
+					}
     					continue;
 				}
+				//加速度阶梯限幅
+				//if (fabsf(acc_delta) > acc_change_limit) {
+    				//	uk(0, i) = uk(1, i) + matrix::sign(acc_delta) * acc_change_limit;
+				//}
+				//保证加速度方向与速度方向一致
+				//if(sign(uk(0,i))!=sign(_vel_sp(i))){
+				//	uk(0,i)=0;
+				//}
 			}
+
    	     }
 		else{//固定增益模式，调试用
 		   	for(int i = 0;i < 3;i++){

@@ -104,7 +104,6 @@ public:
         	}
     	}
 
-
 	PositionControl() = default;
 	~PositionControl() = default;
 
@@ -327,6 +326,7 @@ private:
 	matrix::Matrix3f uk;
 	matrix::Matrix<float, 2, 3> thetamk;
 	matrix::Matrix<float, 6, 3> thetack;
+	matrix::Matrix<float, 6, 3> thetack_init;
 	matrix::Vector3f thetacTemp;
 	bool ifInit = FALSE;
 	bool controlZ = FALSE;

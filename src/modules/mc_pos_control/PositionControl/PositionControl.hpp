@@ -314,7 +314,7 @@ private:
 	float _mfac_vel_acc_xy_Limit;
 
 	//上一时刻的速度,基于初始化值
-	matrix::Vector3f _velk1{0.f, 0.f, 0.f};
+	matrix::Vector3f _posk1{0.f, 0.f, 0.f};
 
 	//外部接口判断状态机
 	bool _mfac_allow{false};

@@ -400,7 +400,7 @@ int EKF2::print_status(bool verbose)
 void EKF2::Run()
 {
 	if (should_exit()) {
-		_sensor_combined_sub.unregisterCallback();
+		_sensor_combined_sub.unregisterCallback();//IMU数据更新
 		_vehicle_imu_sub.unregisterCallback();
 
 		return;
@@ -2179,9 +2179,9 @@ bool EKF2::UpdateExtVisionSample(ekf2_timestamps_s &ekf2_timestamps)
 
 	vehicle_odometry_s ev_odom;
 
-	if (_ev_odom_sub.update(&ev_odom)) {
+	if (_ev_odom_sub.update(&ev_odom)) {//从vehicle_odometry对应的uORB话题拿数据
 
-		extVisionSample ev_data{};
+		extVisionSample ev_data{};//全部设置为NaN值
 		ev_data.pos.setNaN();
 		ev_data.vel.setNaN();
 		ev_data.quat.setNaN();
@@ -2303,7 +2303,7 @@ bool EKF2::UpdateExtVisionSample(ekf2_timestamps_s &ekf2_timestamps)
 			new_ev_odom = true;
 		}
 
-		// use timestamp from external computer, clocks are synchronized when using MAVROS
+		// use timestamp from external computer, clocks are synchronized when using MAVROS使用机载电脑的时间戳
 		ev_data.time_us = ev_odom.timestamp_sample;
 		ev_data.reset_counter = ev_odom.reset_counter;
 		ev_data.quality = ev_odom.quality;

@@ -325,7 +325,7 @@ private:
 
 	matrix::Vector3f _last_ev_bias_published{};
 
-	uORB::Subscription _ev_odom_sub{ORB_ID(vehicle_visual_odometry)};
+	uORB::Subscription _ev_odom_sub{ORB_ID(vehicle_visual_odometry)};//订阅uORB消息
 
 	uORB::PublicationMulti<estimator_bias3d_s> _estimator_ev_pos_bias_pub{ORB_ID(estimator_ev_pos_bias)};
 #endif // CONFIG_EKF2_EXTERNAL_VISION

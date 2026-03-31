@@ -332,6 +332,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	//const bool armed = (_vehicle_status.arming_state == vehicle_status_s::ARMING_STATE_ARMED);
 	//const bool landed = _land_detected.landed;
 	Vector3f vel_error = _vel_sp - _vel;// 期望速度-实际速度
+	//Vector3f pos_error = _pos_sp - _pos;// 期望速度-实际速度
 	const float vel_err_thresh = 0.05f;   // m/s
 	const float vel_sp_thresh  = 0.05f;
 
@@ -340,29 +341,28 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
         	_velocityControl(dt);
         	return;
     	}
+	//未达到指定高度不进入MFAC阶段
+	bool is_on_ground = _land_detected.landed || (_pos(2) > -0.3f);
 
+	if (is_on_ground) {
+    		_mfac_state = MFACState::PID_INIT;
+    		count = 0; // 重置初始化计数器
+    		_velocityControl(dt); // 强制执行 PID
 
-	//if (landed) {
-   	// 	_mfac_state = MFACState::PID_INIT;
+		if (print_counter == 0) {
+           		PX4_INFO("MFAC: LOCKED (Reason: %s)", _land_detected.landed ? "Landed" : "Too Low");
+        	}
+    	return;
+	}
 
-    	//	Vector3f acc_sp_velocity =
-        //		vel_error.emult(_gain_vel_p)
-        //		+ _vel_int
-        //		- _vel_dot.emult(_gain_vel_d);
-
-    	//	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
-    	//return;
-	//}
-
-	//入口保护，防止非法的速度指令
+	//速度非有效值不进入MFAC阶段
 	if ((!_vel.isAllFinite() || !_vel_sp.isAllFinite()) && _mfac_state == MFACState::PID_INIT) {
     		return;
 	}
 
-
-	//还是防止非法的速度指令
-	if (!_velk1.isAllFinite()) {
-    		_velk1 = _vel;
+	//上一时刻速度非有效值则取当前值
+	if (!_posk1.isAllFinite()) {
+    		_posk1 = _pos;
 	}
 	//保护性参数，配合限幅保护用
 	//const float thetac0_max = 20.0f;         // thetak0最大绝对值，经验值
@@ -384,7 +384,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	//速度误差历史更新
 
 	for(int i=0;i<3;i++){
-		ek(0,i)=_vel_sp(i)-_vel(i);
+		ek(0,i)=_pos_sp(i)-_pos(i);
 	}
 	//thetack拼接成3X3矩阵
 	//for (int i = 0; i < 2; i++) {
@@ -399,7 +399,9 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 
 	if(_mfac_state == MFACState::PID_INIT){//如果未初始化，使用PID进行初始化
 		//初始化输入输出误差值，使用PID进行
-
+		if (print_counter == 0) {
+            		PX4_INFO("MFAC: INITIALIZING (Count: %d/%d)", count, _mfac_pid_init);
+        	}
 		Vector3f acc_sp_velocity = vel_error.emult(_gain_vel_p) + _vel_int - _vel_dot.emult(_gain_vel_d);
 
 		ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
@@ -437,6 +439,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
                		 }
                 	//uk 的最新值为当前 PID 输出
                 _mfac_state = MFACState::MFAC_ACTIVE;
+		PX4_INFO("MFAC: ACTIVE NOW"); // 激活瞬间打印
                 count = 0;
 		}
 	}
@@ -466,16 +469,22 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 			//求XY的thetamk
 			for(int i =0;i<2;i++){
 				float thetamTemp = _mfac_vel_lambdam(i)+(uk(1,i)-uk(2,i))*(uk(1,i)-uk(2,i));
-				thetamk(0,i)=thetamk(1,i)+(_vel(i)-_velk1(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/thetamTemp;
+				thetamk(0,i)=thetamk(1,i)+(_pos(i)-_posk1(i)-(thetamk(1,i)*(uk(1,i)-uk(2,i))))*(uk(1,i)-uk(2,i))/thetamTemp;
 			}
 			//求XY的thetack
 			for(int i=0;i<2;i++){
 				matrix::Vector3f thetacik,thetacik1;
+				float pos_error_abs = fabsf(_pos_sp(i) - _pos(i));
+				//如果期望速度/实际误差很小，跳过更新。
+    				if (pos_error_abs < 0.1f && fabsf(_pos_sp(i)) < 0.05f) {
+        				// 维持当前的 thetack，不进行下面的更新计算
+        				continue;
+    				}
 				thetacik1 = get_thetack1(thetack,i);
 				matrix::Vector3f Hk_col = matrix::Vector3f(Hk.col(i));
 				float Hknorm = Hk_col.norm();
 				float tempThetac=(get_thetack1(thetack,i).transpose()*Hk_col)(0, 0);
-				thetacik = thetacik1 + (thetamk(0,i)*Hk_col*(_vel_sp(i)-_vel(i)-thetamk(0,i)*tempThetac))/(_mfac_vel_lambdac(i)+Hknorm*Hknorm);
+				thetacik = thetacik1 + (thetamk(0,i)*Hk_col*(_pos_sp(i)-_pos(i)-thetamk(0,i)*tempThetac))/(_mfac_vel_lambdac(i)+Hknorm*Hknorm);
 				//**************保护性措施***************************************
 				// 限幅保护
     				//if (fabsf(thetacik(0)) > thetac0_max) thetacik(0) = sign(thetacik(0)) * thetac0_max;
@@ -533,7 +542,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
        			 continue;
     			}
     			// 若速度几乎没变化，跳过更新（避免噪声/积分导致学错）
-   			 if (fabsf(_vel(col) - _velk1(col)) < vel_delta_thresh) {
+   			 if (fabsf(_pos(col) - _posk1(col)) < vel_delta_thresh) {
         			for (int r = 0; r < 3; r++) {
         			    thetack(r, col)=thetac_forget*thetack(r, col)+(1-thetac_forget)*thetack_init(r,col);
         			}
@@ -563,8 +572,8 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 				uk(0,i)=uk(1,i)+uktemp;
 			//更新uk
 				bool has_excitation =
-    					fabsf(_vel_sp(i)) > vel_sp_thresh ||
-    					fabsf(_vel(i))    > vel_err_thresh;
+    					fabsf(_pos_sp(i)) > vel_sp_thresh ||
+    					fabsf(_pos(i))    > vel_err_thresh;
 				if (!has_excitation) {
     				//判断为自激励则冻结thetack和u,只允许遗忘。
     					uk(0,i) = uk(1,i);
@@ -624,7 +633,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	//如果控制Z轴速度则多加一部分,否则用默认的PID控制
 
 	print_counter++;
-	if (print_counter >= 50) { // 250 Hz / 50 = 5 Hz
+	if (print_counter >= 125) { // 250 Hz / 125 = 2 Hz
 		print_counter=0;
     		PX4_INFO(
         		"thetacX=[%.2f %.2f %.2f], thetamX=%.3f",
@@ -645,7 +654,7 @@ void PositionControl::_velocityControlMFAC(const float dt)// dt为时间步长
 	_vel_int(2) = math::constrain(_vel_int(2), -CONSTANTS_ONE_G, CONSTANTS_ONE_G);
 	//记录上一时刻速度
 	for(int i=0;i<3;i++){
-		_velk1(i)=_vel(i);
+		_posk1(i)=_pos(i);
 	}
 	}
 	//MFAC_EXIT:

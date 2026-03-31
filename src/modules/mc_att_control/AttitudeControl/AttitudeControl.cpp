@@ -54,12 +54,12 @@ void AttitudeControl::setProportionalGain(const matrix::Vector3f &proportional_g
 
 matrix::Vector3f AttitudeControl::update(const Quatf &q) const
 {
-	Quatf qd = _attitude_setpoint_q;
+	Quatf qd = _attitude_setpoint_q;//姿态四元数值
 
 	// calculate reduced desired attitude neglecting vehicle's yaw to prioritize roll and pitch
-	const Vector3f e_z = q.dcm_z();
-	const Vector3f e_z_d = qd.dcm_z();
-	Quatf qd_red(e_z, e_z_d);
+	const Vector3f e_z = q.dcm_z();//当前Z方向
+	const Vector3f e_z_d = qd.dcm_z();//期望Z方向
+	Quatf qd_red(e_z, e_z_d);//最短弧旋转11
 
 	if (fabsf(qd_red(1)) > (1.f - 1e-5f) || fabsf(qd_red(2)) > (1.f - 1e-5f)) {
 		// In the infinitesimal corner case where the vehicle and thrust have the completely opposite direction,
@@ -72,8 +72,8 @@ matrix::Vector3f AttitudeControl::update(const Quatf &q) const
 		qd_red *= q;
 	}
 
-	// mix full and reduced desired attitude
-	Quatf q_mix = qd_red.inversed() * qd;
+	// mix full and reduced desired attitude补偿偏航误差
+	Quatf q_mix = qd_red.inversed() * qd;//这里相当于减法操作
 	q_mix.canonicalize();
 	// catch numerical problems with the domain of acosf and asinf
 	q_mix(0) = math::constrain(q_mix(0), -1.f, 1.f);
